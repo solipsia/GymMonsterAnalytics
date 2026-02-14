@@ -15,5 +15,4 @@ __pycache__/
 *.code-workspace
 .vscode/
 
-# Reference files
-GymMonsterExercises.txt
+

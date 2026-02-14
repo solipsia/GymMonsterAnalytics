@@ -504,8 +504,19 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
     gap: 1.5rem;
     margin-bottom: 1.5rem;
 }
-#muscleMapSvg {
+#muscleMapSvgWrap {
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+#muscleMapSvg {
+}
+.muscle-map-label {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-top: -1rem;
 }
 #muscleMapContainer svg {
     height: 267px;

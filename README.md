@@ -2,6 +2,10 @@
 
 Web app for viewing Speediance Gym Monster workout history.
 
+![Homepage](images/homepage.png)
+
+![Charts](images/charts.png)
+
 ## Features
 
 - Workout history with calendar view (last 3 months)

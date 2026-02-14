@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello App</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #0a1f0a;
+            color: #eee;
+        }
+        .container {
+            text-align: center;
+            background: #112e11;
+            padding: 3rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 { margin-bottom: 1.5rem; font-size: 1.8rem; }
+        input {
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            border: 2px solid #1b5e20;
+            border-radius: 8px;
+            background: #0a1f0a;
+            color: #eee;
+            outline: none;
+            width: 250px;
+        }
+        input:focus { border-color: #4caf50; }
+        button {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            background: #4caf50;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-left: 0.5rem;
+        }
+        button:hover { background: #388e3c; }
+        #greeting {
+            margin-top: 1.5rem;
+            font-size: 1.4rem;
+            min-height: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>What's your name?</h1>
+        <div>
+            <input type="text" id="nameInput" placeholder="Enter your name" autofocus>
+            <button onclick="sayHello()">Say Hello</button>
+        </div>
+        <p id="greeting"></p>
+    </div>
+    <script>
+        function sayHello() {
+            const name = document.getElementById('nameInput').value.trim();
+            const greeting = document.getElementById('greeting');
+            if (name) {
+                greeting.textContent = `Hello, ${name}! 👋`;
+            } else {
+                greeting.textContent = 'Please enter your name!';
+            }
+        }
+        document.getElementById('nameInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') sayHello();
+        });
+    </script>
+</body>
+</html>

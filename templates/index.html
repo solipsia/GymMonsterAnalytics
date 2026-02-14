@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gym Monster Analytics</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Login View -->
+        <div id="loginView">
+            <h1>Gym Monster Analytics</h1>
+            <div class="card">
+                <div class="error" id="loginError"></div>
+                <label for="email">Email</label>
+                <input type="email" id="email" placeholder="your@email.com" autofocus>
+                <label for="password">Password</label>
+                <input type="password" id="password" placeholder="Password">
+                <button id="loginBtn" onclick="doLogin()">Log In</button>
+            </div>
+            <p style="text-align:center; color:var(--text-faint); font-size:0.8rem;">
+                Connects directly to Speediance EU servers. Credentials are not stored.
+            </p>
+        </div>
+
+        <!-- Workout View -->
+        <div id="workoutView">
+            <div class="header-bar">
+                <h1>Gym Monster Analytics</h1>
+                <div style="display:flex;gap:0.5rem;">
+                    <button id="settingsBtn" onclick="openSettings()" title="Settings" style="width:auto;padding:0.5rem 0.75rem;font-size:1rem;background:var(--bg-elevated);">&#9881;</button>
+                    <button id="logoutBtn" onclick="doLogout()">Log Out</button>
+                </div>
+            </div>
+            <div id="muscleMapContainer" style="display:none;">
+                <div id="muscleMapSvg"></div>
+                <div id="plannedWorkoutsSection"></div>
+            </div>
+            <div id="exerciseHistorySection" style="display:none;">
+                <div class="section-heading">Weight History</div>
+                <div id="exerciseHistoryContent">
+                    <div class="spinner">Loading exercise history...</div>
+                </div>
+                <div id="dailyVolumeChart"></div>
+                <div id="muscleGroupCharts"></div>
+            </div>
+            <div class="section-heading">Recent Workouts</div>
+            <div id="workoutList">
+                <div class="spinner">Loading workouts...</div>
+            </div>
+        </div>
+
+        <!-- Detail View -->
+        <div id="detailView">
+            <button class="back-btn" onclick="showWorkoutList()">Back</button>
+            <div id="detailContent"></div>
+        </div>
+
+        <!-- Settings View -->
+        <div id="settingsView">
+            <div class="header-bar">
+                <h1>Settings</h1>
+                <button onclick="closeSettings()" style="width:auto;padding:0.5rem 1rem;font-size:0.85rem;background:var(--bg-elevated);">Back</button>
+            </div>
+            <div class="section-heading">Exercise Mappings</div>
+            <div class="history-table-wrap">
+                <table class="history-table" id="settingsTable">
+                    <thead><tr>
+                        <th>Exercise</th>
+                        <th>Muscle Group</th>
+                        <th>Weight Type</th>
+                    </tr></thead>
+                    <tbody id="settingsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+    <script src="/static/charts.js"></script>
+    <script src="/static/workouts.js"></script>
+    <script src="/static/settings.js"></script>
+    <script>
+        // Init: check for saved session
+        (async () => {
+            try {
+                const resp = await fetch('/api/check');
+                const data = await resp.json();
+                if (data.ok) {
+                    workoutView.style.display = 'block';
+                    loadWorkouts();
+                    loadPlannedWorkouts();
+                    await Promise.all([loadMuscleGroups(), loadHandleTypes()]);
+                    loadExerciseHistory();
+                    return;
+                }
+            } catch (e) {}
+            loginView.style.display = 'block';
+        })();
+
+        // Allow Enter key to submit login
+        document.getElementById('password').addEventListener('keydown', e => {
+            if (e.key === 'Enter') doLogin();
+        });
+        document.getElementById('email').addEventListener('keydown', e => {
+            if (e.key === 'Enter') document.getElementById('password').focus();
+        });
+    </script>
+</body>
+</html>

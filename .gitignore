@@ -1,0 +1,19 @@
+# Auth & user data
+config.json
+exercise_history.json
+muscle_groups.json
+handle_types.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Claude Code
+.claude/
+
+# IDE
+*.code-workspace
+.vscode/
+
+# Reference files
+GymMonsterExercises.txt

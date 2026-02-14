@@ -1,0 +1,13 @@
+Abs
+Back
+Biceps
+Calves
+Chest
+Delts
+Forearms
+Glutes
+Hamstrings
+Quads
+Traps
+Triceps
+Other

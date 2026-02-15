@@ -130,9 +130,13 @@ async function openDetail(w) {
             <div style="color:var(--text-muted); font-size:0.75rem; margin-bottom:1rem;">Showing planned template (no performance data available)</div>
         `;
 
+        // Muscle volume summary table
+        html += buildMuscleVolumeSummary(exercises);
+
         if (exercises.length === 0) {
             html += '<div class="empty">No exercises found in this workout.</div>';
         } else {
+            html += '<div class="section-heading" style="margin-top:0.5rem;">Exercises</div>';
             html += exercises.map(ex => renderExercise(ex)).join('');
         }
 
@@ -307,12 +311,109 @@ function renderExercise(ex) {
         </tr>`;
     }
 
+    // Muscle group labels
+    const primary = getMuscleGroup(name);
+    const secondary = getSecondaryMuscle(name);
+    const secPct = getSecondaryPercent(name);
+    let muscleLabel = primary;
+    if (secondary && secondary !== 'None') {
+        muscleLabel += `, ${secondary} ${secPct}%`;
+    }
+
     return `
         <div class="exercise-card">
-            <div class="exercise-name">${esc(name)}</div>
+            <div class="exercise-name">${esc(name)} <span style="color:var(--text-muted); font-weight:400; font-size:0.85rem">(${esc(muscleLabel)})</span></div>
             <table class="sets-table">
                 <thead><tr>
                     <th>Set</th><th>Reps</th><th>Total Weight</th><th>Per Handle</th><th>Mode</th><th>Rest</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+function buildMuscleVolumeSummary(exercises) {
+    // Calculate planned volume per exercise, then distribute to muscle groups
+    const muscleVolumes = {}; // { group: { primary: N, secondary: N } }
+
+    for (const ex of exercises) {
+        const name = ex.title || ex.name || ex.groupName || '';
+        if (!name) continue;
+
+        const reps = str(ex.setsAndReps).split(',').filter(Boolean);
+        const weights = str(ex.weights).split(',').filter(Boolean);
+        const counters = str(ex.counterweight2 || ex.counterweight).split(',').filter(Boolean);
+        const isDual = getHandleType(name) === 'Dual Handle';
+
+        let exerciseVolume = 0;
+        for (let i = 0; i < reps.length; i++) {
+            const repVal = parseFloat(reps[i]) || 0;
+            // Skip if using RM (counterweight) — no real weight to calculate volume from
+            if (counters[i] && counters[i] !== '0') continue;
+            const wVal = parseFloat(weights[i]) || 0;
+            const totalWeight = isDual ? wVal * 2 : wVal;
+            exerciseVolume += repVal * totalWeight;
+        }
+
+        if (exerciseVolume <= 0) continue;
+
+        const primary = getMuscleGroup(name);
+        const secondary = getSecondaryMuscle(name);
+        const secPct = getSecondaryPercent(name) / 100;
+
+        // Primary contribution
+        if (!muscleVolumes[primary]) muscleVolumes[primary] = { primary: 0, secondary: 0 };
+        muscleVolumes[primary].primary += exerciseVolume;
+
+        // Secondary contribution (scaled)
+        if (secondary && secondary !== 'None') {
+            if (!muscleVolumes[secondary]) muscleVolumes[secondary] = { primary: 0, secondary: 0 };
+            muscleVolumes[secondary].secondary += exerciseVolume * secPct;
+        }
+    }
+
+    const groups = Object.keys(muscleVolumes).sort((a, b) => {
+        const totalA = muscleVolumes[a].primary + muscleVolumes[a].secondary;
+        const totalB = muscleVolumes[b].primary + muscleVolumes[b].secondary;
+        return totalB - totalA;
+    });
+
+    if (groups.length === 0) return '';
+
+    let rows = '';
+    let totalPrimary = 0, totalSecondary = 0;
+    for (const g of groups) {
+        const p = muscleVolumes[g].primary;
+        const s = muscleVolumes[g].secondary;
+        const total = p + s;
+        totalPrimary += p;
+        totalSecondary += s;
+        rows += `<tr>
+            <td style="font-weight:500">${esc(g)}</td>
+            <td style="text-align:right">${p > 0 ? p.toFixed(1) : '-'}</td>
+            <td style="text-align:right">${s > 0 ? s.toFixed(1) : '-'}</td>
+            <td style="text-align:right; font-weight:600">${total.toFixed(1)}</td>
+        </tr>`;
+    }
+
+    const grandTotal = totalPrimary + totalSecondary;
+    rows += `<tr style="border-top:2px solid var(--border)">
+        <td style="font-weight:600; color:var(--accent)">Total</td>
+        <td style="text-align:right; font-weight:600; color:var(--accent)">${totalPrimary.toFixed(1)}</td>
+        <td style="text-align:right; font-weight:600; color:var(--accent)">${totalSecondary.toFixed(1)}</td>
+        <td style="text-align:right; font-weight:600; color:var(--accent)">${grandTotal.toFixed(1)}</td>
+    </tr>`;
+
+    return `
+        <div class="muscle-volume-summary">
+            <div class="section-heading" style="font-size:1rem; margin-bottom:0.5rem;">Muscle Volume (kg)</div>
+            <table class="sets-table">
+                <thead><tr>
+                    <th>Muscle Group</th>
+                    <th style="text-align:right">Primary</th>
+                    <th style="text-align:right">Secondary</th>
+                    <th style="text-align:right">Total Effective</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>
             </table>

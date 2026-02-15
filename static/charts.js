@@ -111,13 +111,23 @@ function renderMuscleGroupCharts() {
 
     const WEEKS = 52;
 
-    // Group exercises by muscle group, sum daily volumes
+    // Group exercises by muscle group, sum daily volumes (primary 100% + secondary scaled)
     const groupVolumes = {}; // {group: {date: volume}}
     for (const [exName, dateMap] of Object.entries(exerciseDaily)) {
-        const group = getMuscleGroup(exName);
-        if (!groupVolumes[group]) groupVolumes[group] = {};
+        const primary = getMuscleGroup(exName);
+        const secondary = getSecondaryMuscle(exName);
+        const secPct = getSecondaryPercent(exName) / 100;
+
+        if (!groupVolumes[primary]) groupVolumes[primary] = {};
         for (const [date, vol] of Object.entries(dateMap)) {
-            groupVolumes[group][date] = (groupVolumes[group][date] || 0) + vol;
+            groupVolumes[primary][date] = (groupVolumes[primary][date] || 0) + vol;
+        }
+
+        if (secondary && secondary !== 'None') {
+            if (!groupVolumes[secondary]) groupVolumes[secondary] = {};
+            for (const [date, vol] of Object.entries(dateMap)) {
+                groupVolumes[secondary][date] = (groupVolumes[secondary][date] || 0) + vol * secPct;
+            }
         }
     }
 

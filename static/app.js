@@ -233,57 +233,105 @@ async function exportTemplatesJSON(e) {
     setTimeout(() => link.textContent = origText, 2000);
 }
 
+function computeMuscleFatigue() {
+    // Build per-muscle-group fatigue events: {group: {date: contribution}}
+    // Primary = 1.0, secondary = secondaryPercent/100
+    const muscleEvents = {};
+    const exerciseDaily = window._exerciseDaily || {};
+    const lastTime = window._exerciseLastTime || {};
+
+    for (const [exName, dateMap] of Object.entries(exerciseDaily)) {
+        const primary = getMuscleGroup(exName);
+        const secondary = getSecondaryMuscle(exName);
+        const secPct = getSecondaryPercent(exName) / 100;
+
+        for (const date of Object.keys(dateMap)) {
+            if (!muscleEvents[primary]) muscleEvents[primary] = {};
+            muscleEvents[primary][date] = (muscleEvents[primary][date] || 0) + 1.0;
+
+            if (secondary && secondary !== 'None') {
+                if (!muscleEvents[secondary]) muscleEvents[secondary] = {};
+                muscleEvents[secondary][date] = (muscleEvents[secondary][date] || 0) + secPct;
+            }
+        }
+    }
+
+    const now = new Date();
+    const fatigue = {}; // {group: 0..1}
+
+    for (const [group, dateContribs] of Object.entries(muscleEvents)) {
+        const dates = Object.keys(dateContribs).sort();
+        let currentFatigue = 0;
+        let lastMs = null;
+
+        for (const date of dates) {
+            const dateMs = new Date(date + 'T12:00:00').getTime();
+            if (lastMs !== null) {
+                // Decay since last event
+                const hoursBetween = (dateMs - lastMs) / 3600000;
+                currentFatigue = Math.max(0, currentFatigue - hoursBetween / _recoveryHours);
+            }
+            // Add new fatigue, cap at 1.0
+            currentFatigue = Math.min(1.0, currentFatigue + dateContribs[date]);
+            lastMs = dateMs;
+        }
+
+        // Decay from last event to now — use best available timestamp for the last date
+        if (lastMs !== null) {
+            const lastDate = dates[dates.length - 1];
+            // Find most precise timestamp for this muscle's last date
+            let bestTimestamp = lastDate + 'T12:00:00';
+            for (const [exName] of Object.entries(exerciseDaily)) {
+                const group2 = getMuscleGroup(exName);
+                const sec2 = getSecondaryMuscle(exName);
+                if (group2 !== group && sec2 !== group) continue;
+                const ft = lastTime[exName];
+                if (ft && ft.slice(0, 10) === lastDate && ft > bestTimestamp) {
+                    bestTimestamp = ft.replace(' ', 'T');
+                }
+            }
+            const hoursSince = Math.max(0, (now - new Date(bestTimestamp)) / 3600000);
+            currentFatigue = Math.max(0, currentFatigue - hoursSince / _recoveryHours);
+        }
+
+        fatigue[group] = currentFatigue;
+    }
+
+    return fatigue;
+}
+
 function updateMuscleMapColors() {
     const container = document.getElementById('muscleMapContainer');
     const paths = container.querySelectorAll('.muscles path[data-muscle]');
     if (!paths.length || !window._exerciseDaily) return;
 
-    // Find most recent finish time per muscle group (hour-level precision)
-    const lastWorked = {};
-    const now = new Date();
-    const lastTime = window._exerciseLastTime || {};
+    const fatigue = computeMuscleFatigue();
 
-    for (const [exName, dates] of Object.entries(window._exerciseDaily)) {
-        const group = getMuscleGroup(exName);
-        const ft = lastTime[exName];
-        // Use finishTime if available, otherwise fall back to latest date
-        const best = ft || Object.keys(dates).sort().pop();
-        if (best && (!lastWorked[group] || best > lastWorked[group])) {
-            lastWorked[group] = best;
-        }
-    }
-
-    // Color each path based on hours since last worked, add tooltip
     paths.forEach(path => {
         const group = path.dataset.muscle;
         const old = path.querySelector('title');
         if (old) old.remove();
 
-        if (!lastWorked[group]) {
+        const f = fatigue[group];
+        if (f == null || f <= 0) {
             const t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            t.textContent = `${group}: no data`;
+            t.textContent = `${group}: ${f == null ? 'no data' : 'recovered'}`;
             path.appendChild(t);
             return;
         }
-        const last = new Date(lastWorked[group].replace(' ', 'T'));
-        const hours = Math.max(0, (now - last) / 3600000);
-        path.style.fill = muscleFatigueColor(hours);
 
+        path.style.fill = muscleFatigueColor(f);
+
+        const pct = Math.round(f * 100);
         const t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-        if (hours < 1) t.textContent = `${group}: just now`;
-        else if (hours < 24) t.textContent = `${group}: ${Math.floor(hours)}h ago`;
-        else {
-            const days = Math.floor(hours / 24);
-            t.textContent = `${group}: ${days} day${days !== 1 ? 's' : ''} ago`;
-        }
+        t.textContent = `${group}: ${pct}% fatigued`;
         path.appendChild(t);
     });
 }
 
-function muscleFatigueColor(hours) {
-    // 0 hours = red (hue 0), _recoveryHours+ = green (hue 120)
-    const t = Math.min(hours, _recoveryHours) / _recoveryHours; // 0..1
-    const hue = t * 120;
+function muscleFatigueColor(fatigue) {
+    // fatigue 1.0 = red (hue 0), 0.0 = green (hue 120)
+    const hue = (1 - fatigue) * 120;
     return `hsl(${hue}, 75%, 50%)`;
 }
 
@@ -295,24 +343,32 @@ async function renderDetailMuscleMap(exerciseNames) {
         const svgText = await resp.text();
         container.innerHTML = svgText;
 
-        // Collect muscle groups used by exercises in this workout
-        const workedGroups = new Set();
+        // Collect muscle groups: track primary vs secondary-only
+        const primaryGroups = new Set();
+        const secondaryGroups = new Set();
         for (const name of exerciseNames) {
             const group = getMuscleGroup(name);
-            if (group && group !== 'Other') workedGroups.add(group);
+            if (group && group !== 'Other') primaryGroups.add(group);
+            const sec = getSecondaryMuscle(name);
+            if (sec && sec !== 'None') secondaryGroups.add(sec);
         }
 
-        // Color muscles: worked = red, others = light grey
+        // Color muscles: primary = red, secondary-only = orange, others = grey
         const paths = container.querySelectorAll('.muscles path[data-muscle]');
         paths.forEach(path => {
             const group = path.dataset.muscle;
-            if (workedGroups.has(group)) {
+            let label = group;
+            if (primaryGroups.has(group)) {
                 path.style.fill = 'hsl(0, 75%, 50%)';
+                label += ' (primary)';
+            } else if (secondaryGroups.has(group)) {
+                path.style.fill = 'hsl(30, 85%, 50%)';
+                label += ' (secondary)';
             } else {
                 path.style.fill = '#555';
             }
             const t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            t.textContent = group + (workedGroups.has(group) ? ' (targeted)' : '');
+            t.textContent = label;
             path.appendChild(t);
         });
 

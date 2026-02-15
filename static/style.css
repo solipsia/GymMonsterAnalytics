@@ -555,6 +555,15 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
     line-height: 1.3;
 }
 
+/* Muscle volume summary in detail view */
+.muscle-volume-summary {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+}
+
 .rolling-avg-svg {
     position: absolute;
     top: 0;

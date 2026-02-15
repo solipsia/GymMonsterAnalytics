@@ -32,7 +32,7 @@ resources/
   muscles-optimised.svg # Source SVG with embedded reference image (not served)
 config.json             # Auto-generated auth token persistence (do not commit)
 exercise_history.json   # Persistent training detail cache (auto-generated, do not commit)
-muscle_groups.json      # Persistent exercise-to-muscle-group mappings (auto-generated, do not commit)
+muscle_groups.json      # Persistent exercise-to-muscle mappings with secondary (auto-generated, do not commit)
 handle_types.json       # Persistent exercise-to-handle-type mappings (auto-generated, do not commit)
 settings.json           # Persistent app settings like recovery hours (auto-generated, do not commit)
 requirements.txt        # flask, requests
@@ -62,13 +62,13 @@ python app.py            # Starts on http://localhost:5000
 - **Exercise history decomposed into helpers**: `_extract_completed()`, `_fetch_uncached_details()`, `_build_exercise_results()`, `_build_daily_volumes()` — each ~25 lines, called by `get_exercise_history()`
 - Exercise history table filters: zero-volume sessions excluded, only exercises done in last 14 days shown
 - Exercise history table shows muscle group column (sorted by muscle group, then name), and % change for volume columns (first value absolute, subsequent values as +N% / -N% with green/red coloring)
-- Muscle group mappings: stored server-side in `muscle_groups.json` via `/api/muscle-groups` endpoints. In-memory cache `_muscleGroupMap` loaded at startup via `loadMuscleGroups()`.
+- Muscle group mappings: stored server-side in `muscle_groups.json` via `/api/muscle-groups` endpoints. Each entry is `{primary, secondary, secondaryPercent}` (migrated from old flat `"exercise": "group"` format on load). In-memory cache `_muscleGroupMap` loaded at startup via `loadMuscleGroups()`. Accessor functions: `getMuscleGroup(name)` (returns primary), `getSecondaryMuscle(name)` (returns secondary or "None"), `getSecondaryPercent(name)` (returns 0–100, default 50). `setMuscleGroup(name, group, secondary, secondaryPercent)` saves all fields (undefined params keep existing values).
 - Handle type mappings: stored server-side in `handle_types.json` via `/api/handle-types` endpoints. In-memory cache `_handleTypeMap` loaded at startup via `loadHandleTypes()`. Options: "Dual Handle" (default) or "Single Weight". When "Dual Handle", workout detail tables show an extra "Per Handle" column (total weight / 2).
 - **App settings**: stored server-side in `settings.json` via `/api/settings` endpoints. `_recoveryHours` global (default 96) loaded at startup via `loadSettings()`. Currently stores `recoveryHours` (muscle full recovery time in hours, configurable 24–168h via slider in settings page).
 - `/api/exercise-history` response: `{exercises: [...], daily_volume: [{date, volume}], exercise_daily: {exercise_name: {date: volume}}, exercise_last_time: {exercise_name: "YYYY-MM-DD HH:MM:SS"}}`
 - Weekly volume bar chart: `renderDailyVolumeChart()` shows 52 weeks of total volume per week (Mon–Sun) below the exercise history table. Calendar data fetches 13 months to cover the range. Week buckets built by `buildWeekBuckets()`, aggregated by `aggregateWeekly()`. Tooltips show week date range via `formatWeekRange()`.
 - Per-muscle-group volume charts: `renderMuscleGroupCharts()` shows one half-height (70px) chart per muscle group below the weekly volume chart. Groups exercises by muscle mapping from `_muscleGroupMap`, sums daily volumes into weekly buckets from `window._exerciseDaily`. Only renders charts for groups with non-zero volume. Iterates `MUSCLE_GROUPS` array for consistent ordering.
-- **Settings page**: accessible via gear icon next to Log Out. Has a "Muscle Full Recovery Time" slider (24h–168h, default 96h/4 days) that controls fatigue color gradient timing, plus exercise mapping table listing ALL exercises (from `_exerciseDaily` + existing mappings) with muscle group and handle type dropdowns. `openSettings()` / `closeSettings()` toggle the view. Changes save immediately to server.
+- **Settings page**: accessible via gear icon next to Log Out. Has a "Muscle Full Recovery Time" slider (24h–168h, default 96h/4 days) that controls fatigue color gradient timing, plus exercise mapping table listing ALL exercises (from `_exerciseDaily` + existing mappings) with columns: Primary Muscle, Secondary Muscle (dropdown with "None" + all muscle groups), % Secondary (0–100 number input, disabled when secondary is "None"), and Weight Type. New/unconfigured exercises default to primary="Other", secondary="None", %=50. `openSettings()` / `closeSettings()` toggle the view. Changes save immediately to server.
 - **Rolling average line**: `buildRollingAvgSvg(items, maxVol, windowSize=4)` computes moving average including zeros, renders as SVG polyline overlaid on bar charts. Applied to weekly volume chart and all muscle group charts.
 - **Muscle map**: SVG body diagram (`static/muscles.svg`) displayed on the left side of `#muscleMapContainer`. Body outline paths in gray, muscle paths color-coded by fatigue: red (just exercised) → orange → green (fully recovered). Unexercised muscles stay dark gray. Each `<path>` has a `data-muscle` attribute mapping to a muscle group (Chest, Delts, Triceps, Biceps, Forearms, Back, Abs, Traps, Glutes, Quads, Hamstrings, Calves). `loadMuscleMap()` fetches and inlines the SVG into `#muscleMapSvg` wrapper; `updateMuscleMapColors()` uses `_exerciseLastTime` (finish timestamps from calendar API) for hour-level precision, falling back to date strings from `_exerciseDaily`. Colors set via `muscleFatigueColor(hours)` using HSL interpolation (hue 0→120 over `_recoveryHours`, default 96h/4 days, configurable in settings). Tooltips show "just now" / "Xh ago" / "X days ago".
 - **Planned workouts**: Displayed to the right of the muscle map in `#plannedWorkoutsSection`. `loadPlannedWorkouts()` fetches `/api/templates` and renders cards in a 2-column grid showing template name + exercise names. Cards are clickable (reuses `openDetail()` flow). Container scrolls vertically if content exceeds muscle map height (267px). `#muscleMapContainer` uses flexbox with `#muscleMapSvg` (fixed) and `#plannedWorkoutsSection` (flex: 1) as siblings.
@@ -87,7 +87,7 @@ python app.py            # Starts on http://localhost:5000
 | `/api/exercise-history` | GET | workouts | Aggregated exercise volume history (persistent + in-memory cache) |
 | `/api/templates` | GET | workouts | List all custom training templates with exercise names |
 | `/api/muscle-groups` | GET | settings | Return saved muscle group mappings |
-| `/api/muscle-groups` | POST | settings | Save a single exercise-to-muscle-group mapping |
+| `/api/muscle-groups` | POST | settings | Save exercise muscle mapping (group, secondary, secondaryPercent) |
 | `/api/handle-types` | GET | settings | Return saved handle type mappings |
 | `/api/handle-types` | POST | settings | Save a single exercise-to-handle-type mapping |
 | `/api/settings` | GET | settings | Return app settings (recovery hours, etc.) |
@@ -118,7 +118,7 @@ Dark slate theme using CSS custom properties in `static/style.css` (`--bg-base: 
 
 | File | Contents |
 |------|----------|
-| `static/app.js` | `formatDate()`, `esc()`, `str()`, `apiFetch()`, `apiPost()`, `MUSCLE_GROUPS`, `HANDLE_TYPES`, muscle/handle mapping functions, `doLogin()`, `doLogout()`, `loadSettings()`, `loadMuscleMap()`, `updateMuscleMapColors()`, `muscleFatigueColor()`, `loadPlannedWorkouts()`, `openTemplateDetail()`, `renderExerciseHistoryTable()`, `loadExerciseHistory()`, `showWorkoutList()` |
+| `static/app.js` | `formatDate()`, `esc()`, `str()`, `apiFetch()`, `apiPost()`, `MUSCLE_GROUPS`, `HANDLE_TYPES`, muscle mapping functions (`getMuscleGroup`, `getSecondaryMuscle`, `getSecondaryPercent`, `setMuscleGroup`), handle mapping functions, `doLogin()`, `doLogout()`, `loadSettings()`, `loadMuscleMap()`, `updateMuscleMapColors()`, `muscleFatigueColor()`, `loadPlannedWorkouts()`, `openTemplateDetail()`, `renderExerciseHistoryTable()`, `loadExerciseHistory()`, `showWorkoutList()` |
 | `static/charts.js` | `buildWeekBuckets()`, `aggregateWeekly()`, `formatWeekRange()`, `buildRollingAvgSvg(items, maxVol, windowSize)`, `renderDailyVolumeChart()`, `renderMuscleGroupCharts()`, `renderExerciseBarChart()` |
 | `static/workouts.js` | `loadWorkouts()`, `openDetail()`, `renderTrainingDetail()`, `renderTrainingExercise()`, `renderExercise()`, `openExerciseDetail()` |
 | `static/settings.js` | `formatRecoveryLabel()`, `initRecoverySlider()`, `openSettings()`, `closeSettings()` |

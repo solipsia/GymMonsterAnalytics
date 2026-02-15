@@ -44,19 +44,29 @@ function openSettings() {
         return ga.localeCompare(gb) || a.localeCompare(b);
     });
 
+    const secondaryMuscleOptions = ['None', ...MUSCLE_GROUPS];
+
     const tbody = document.getElementById('settingsTableBody');
     tbody.innerHTML = sorted.map(name => {
         const currentMuscle = getMuscleGroup(name);
         const muscleOpts = MUSCLE_GROUPS.map(g =>
             `<option value="${g}"${g === currentMuscle ? ' selected' : ''}>${g}</option>`
         ).join('');
+        const currentSecondary = getSecondaryMuscle(name);
+        const secondaryOpts = secondaryMuscleOptions.map(g =>
+            `<option value="${g}"${g === currentSecondary ? ' selected' : ''}>${g}</option>`
+        ).join('');
+        const currentPercent = getSecondaryPercent(name);
         const currentHandle = getHandleType(name);
         const handleOpts = HANDLE_TYPES.map(h =>
             `<option value="${h}"${h === currentHandle ? ' selected' : ''}>${h}</option>`
         ).join('');
+        const isNone = currentSecondary === 'None';
         return `<tr>
             <td>${esc(name)}</td>
             <td><select class="settings-select" data-exercise="${esc(name)}" data-field="muscle">${muscleOpts}</select></td>
+            <td><select class="settings-select" data-exercise="${esc(name)}" data-field="secondary">${secondaryOpts}</select></td>
+            <td><input type="number" class="settings-pct" data-exercise="${esc(name)}" data-field="secondaryPercent" value="${currentPercent}" min="0" max="100"${isNone ? ' disabled' : ''}></td>
             <td><select class="settings-select" data-exercise="${esc(name)}" data-field="handle">${handleOpts}</select></td>
         </tr>`;
     }).join('');
@@ -66,9 +76,23 @@ function openSettings() {
             const ex = this.dataset.exercise;
             if (this.dataset.field === 'muscle') {
                 setMuscleGroup(ex, this.value);
+            } else if (this.dataset.field === 'secondary') {
+                const pctInput = tbody.querySelector(`input[data-exercise="${ex}"][data-field="secondaryPercent"]`);
+                pctInput.disabled = this.value === 'None';
+                setMuscleGroup(ex, undefined, this.value);
             } else {
                 setHandleType(ex, this.value);
             }
+        });
+    });
+
+    tbody.querySelectorAll('input.settings-pct').forEach(input => {
+        input.addEventListener('change', function() {
+            const ex = this.dataset.exercise;
+            let val = parseInt(this.value) || 0;
+            val = Math.max(0, Math.min(100, val));
+            this.value = val;
+            setMuscleGroup(ex, undefined, undefined, val);
         });
     });
 }

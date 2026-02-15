@@ -58,12 +58,31 @@ async function loadMuscleGroups() {
 }
 
 function getMuscleGroup(name) {
-    return _muscleGroupMap[name] || 'Other';
+    const entry = _muscleGroupMap[name];
+    if (!entry) return 'Other';
+    return typeof entry === 'string' ? entry : (entry.primary || 'Other');
 }
 
-async function setMuscleGroup(name, group) {
-    _muscleGroupMap[name] = group;
-    await apiPost('/api/muscle-groups', { exercise: name, group });
+function getSecondaryMuscle(name) {
+    const entry = _muscleGroupMap[name];
+    if (!entry || typeof entry === 'string') return 'None';
+    return entry.secondary || 'None';
+}
+
+function getSecondaryPercent(name) {
+    const entry = _muscleGroupMap[name];
+    if (!entry || typeof entry === 'string') return 50;
+    return entry.secondaryPercent != null ? entry.secondaryPercent : 50;
+}
+
+async function setMuscleGroup(name, group, secondary, secondaryPercent) {
+    const entry = _muscleGroupMap[name];
+    const current = (entry && typeof entry === 'object') ? entry : { primary: getMuscleGroup(name), secondary: 'None', secondaryPercent: 50 };
+    if (group !== undefined) current.primary = group;
+    if (secondary !== undefined) current.secondary = secondary;
+    if (secondaryPercent !== undefined) current.secondaryPercent = secondaryPercent;
+    _muscleGroupMap[name] = current;
+    await apiPost('/api/muscle-groups', { exercise: name, group: current.primary, secondary: current.secondary, secondaryPercent: current.secondaryPercent });
 }
 
 // ── Handle type mappings ──

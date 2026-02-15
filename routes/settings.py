@@ -26,7 +26,15 @@ def save_muscle_group():
     if not exercise or not group:
         return jsonify({"ok": False, "error": "Missing exercise or group"}), 400
     mapping = load_muscle_groups()
-    mapping[exercise] = group
+    existing = mapping.get(exercise, {"primary": "Other", "secondary": "None", "secondaryPercent": 50})
+    # Accept optional secondary fields
+    existing["primary"] = group
+    if "secondary" in data:
+        existing["secondary"] = data["secondary"]
+    if "secondaryPercent" in data:
+        pct = data["secondaryPercent"]
+        existing["secondaryPercent"] = max(0, min(100, int(pct)))
+    mapping[exercise] = existing
     save_muscle_groups(mapping)
     return jsonify({"ok": True})
 

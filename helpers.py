@@ -77,14 +77,28 @@ def save_history_cache(cache):
 # ── Muscle groups I/O ──
 
 def load_muscle_groups():
-    """Load muscle group mappings from disk."""
+    """Load muscle group mappings from disk.
+
+    Returns dict of {exercise: {primary, secondary, secondaryPercent}}.
+    Migrates old flat format (exercise: group_string) on the fly.
+    """
+    raw = {}
     if os.path.exists(MUSCLE_GROUPS_FILE):
         try:
             with open(MUSCLE_GROUPS_FILE, "r") as f:
-                return json.load(f)
+                raw = json.load(f)
         except (json.JSONDecodeError, IOError):
             pass
-    return {}
+
+    # Migrate old flat format → new nested format
+    migrated = False
+    for key, val in raw.items():
+        if isinstance(val, str):
+            raw[key] = {"primary": val, "secondary": "None", "secondaryPercent": 50}
+            migrated = True
+    if migrated:
+        save_muscle_groups(raw)
+    return raw
 
 
 def save_muscle_groups(mapping):

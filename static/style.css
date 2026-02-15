@@ -296,6 +296,18 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
     cursor: pointer;
 }
 .settings-select:focus { outline: none; border-color: var(--primary); }
+.settings-pct {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.8rem;
+    width: 4rem;
+    text-align: center;
+}
+.settings-pct:focus { outline: none; border-color: var(--primary); }
+.settings-pct:disabled { opacity: 0.3; cursor: not-allowed; }
 .settings-slider-wrap {
     display: flex;
     align-items: center;

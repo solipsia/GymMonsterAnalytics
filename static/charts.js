@@ -43,17 +43,15 @@ function formatWeekRange(startStr, endStr) {
            new Date(endStr).toLocaleDateString('en-GB', opts);
 }
 
-function buildRollingAvgSvg(items, maxVol) {
-    const WINDOW = 4; // 4-week moving average
+function buildRollingAvgSvg(items, maxVol, windowSize) {
+    if (!windowSize) windowSize = 4;
     const n = items.length;
     const points = [];
     for (let i = 0; i < n; i++) {
-        const start = Math.max(0, i - WINDOW + 1);
+        const start = Math.max(0, i - windowSize + 1);
         const count = i - start + 1;
         let sum = 0;
-        for (let j = start; j <= i; j++) {
-            sum += items[j].volume;
-        }
+        for (let j = start; j <= i; j++) sum += items[j].volume;
         const avg = sum / count;
         const x = ((i + 0.5) / n) * 100;
         const y = 100 - (avg / maxVol) * 100;
@@ -85,11 +83,11 @@ function renderDailyVolumeChart(dailyVolume) {
     const barsHtml = weeks.map(w => {
         const cur = w.isCurrent ? ' current-week' : '';
         if (w.volume === 0) {
-            return `<div class="dv-bar${cur}" style="height:1px;"></div>`;
+            return `<div class="chart-bar${cur}" style="height:1px;"></div>`;
         }
         const pct = Math.max(2, (w.volume / maxVol) * 100);
-        return `<div class="dv-bar has-vol${cur}" style="height:${pct}%">
-            <div class="bar-tooltip">${formatWeekRange(w.start, w.end)}<br>${w.volume.toFixed(0)} kg</div>
+        return `<div class="chart-bar has-vol${cur}" style="height:${pct}%">
+            <div class="chart-tooltip">${formatWeekRange(w.start, w.end)}<br>${w.volume.toFixed(0)} kg</div>
         </div>`;
     }).join('');
 
@@ -98,7 +96,7 @@ function renderDailyVolumeChart(dailyVolume) {
     container.innerHTML = `
         <div class="daily-volume-wrap">
             <div class="section-heading">Weekly Full Body Volume</div>
-            <div class="daily-volume-chart">${barsHtml}${avgSvg}</div>
+            <div class="chart chart-md">${barsHtml}${avgSvg}</div>
         </div>
     `;
 }
@@ -138,11 +136,11 @@ function renderMuscleGroupCharts() {
         const barsHtml = weeks.map(w => {
             const cur = w.isCurrent ? ' current-week' : '';
             if (w.volume === 0) {
-                return `<div class="dv-bar${cur}" style="height:1px;"></div>`;
+                return `<div class="chart-bar${cur}" style="height:1px;"></div>`;
             }
             const pct = Math.max(3, (w.volume / maxVol) * 100);
-            return `<div class="dv-bar has-vol${cur}" style="height:${pct}%">
-                <div class="bar-tooltip">${formatWeekRange(w.start, w.end)}<br>${w.volume.toFixed(0)} kg</div>
+            return `<div class="chart-bar has-vol${cur}" style="height:${pct}%">
+                <div class="chart-tooltip">${formatWeekRange(w.start, w.end)}<br>${w.volume.toFixed(0)} kg</div>
             </div>`;
         }).join('');
 
@@ -151,31 +149,12 @@ function renderMuscleGroupCharts() {
         html += `
             <div class="daily-volume-wrap">
                 <div class="section-heading" style="font-size:1rem;">${esc(group)}</div>
-                <div class="daily-volume-chart-sm">${barsHtml}${avgSvg}</div>
+                <div class="chart chart-sm">${barsHtml}${avgSvg}</div>
             </div>
         `;
     }
 
     container.innerHTML = html;
-}
-
-function buildRollingAvgSvgN(items, maxVol, windowSize) {
-    const n = items.length;
-    const points = [];
-    for (let i = 0; i < n; i++) {
-        const start = Math.max(0, i - windowSize + 1);
-        const count = i - start + 1;
-        let sum = 0;
-        for (let j = start; j <= i; j++) sum += items[j].volume;
-        const avg = sum / count;
-        const x = ((i + 0.5) / n) * 100;
-        const y = 100 - (avg / maxVol) * 100;
-        points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
-    }
-    if (points.length < 2) return '';
-    return `<svg class="rolling-avg-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <polyline points="${points.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
-    </svg>`;
 }
 
 function renderWorkoutVolumeChart(templateCode) {
@@ -202,17 +181,17 @@ function renderWorkoutVolumeChart(templateCode) {
 
     const barsHtml = itemsWithIdx.map(item => {
         const pct = Math.max(3, (item.volume / maxVol) * 100);
-        return `<div class="dv-bar has-vol clickable-bar" data-workout-idx="${item.idx}" style="height:${pct}%; cursor:pointer;">
-            <div class="bar-tooltip">${formatDate(item.date)}<br>${item.volume.toFixed(0)} kg</div>
+        return `<div class="chart-bar has-vol clickable-bar" data-workout-idx="${item.idx}" style="height:${pct}%; cursor:pointer;">
+            <div class="chart-tooltip">${formatDate(item.date)}<br>${item.volume.toFixed(0)} kg</div>
         </div>`;
     }).join('');
 
-    const avgSvg = buildRollingAvgSvgN(itemsWithIdx, maxVol, 4);
+    const avgSvg = buildRollingAvgSvg(itemsWithIdx, maxVol, 4);
 
     container.innerHTML = `
         <div class="daily-volume-wrap">
             <div class="section-heading" style="font-size:0.9rem;">Workout Volume History (${itemsWithIdx.length} sessions)</div>
-            <div class="daily-volume-chart-sm">${barsHtml}${avgSvg}</div>
+            <div class="chart chart-sm">${barsHtml}${avgSvg}</div>
         </div>
     `;
 
@@ -242,18 +221,18 @@ function renderExerciseBarChart(exerciseName, currentDate) {
     }
 
     const barsHtml = padded.map(h => {
-        if (!h) return '<div class="bar-empty"></div>';
+        if (!h) return '<div class="chart-bar-empty"></div>';
         const pct = Math.max(5, (h.volume / maxVol) * 100);
         const isCurrent = h.date === currentDate;
-        return `<div class="bar ${isCurrent ? 'bar-current' : ''}" style="height:${pct}%">
-            <div class="bar-tooltip">${h.date}: ${h.volume.toFixed(0)} kg</div>
+        return `<div class="chart-bar ${isCurrent ? 'bar-current' : ''}" style="height:${pct}%">
+            <div class="chart-tooltip">${h.date}: ${h.volume.toFixed(0)} kg</div>
         </div>`;
     }).join('');
 
     return `
         <div class="exercise-history-bar">
             <div class="exercise-history-label">Volume history (${ex.count} sessions)</div>
-            <div class="bar-chart">${barsHtml}</div>
+            <div class="chart chart-xs">${barsHtml}</div>
         </div>
     `;
 }

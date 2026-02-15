@@ -5,15 +5,10 @@ async function loadWorkouts() {
     list.innerHTML = '<div class="spinner">Loading workouts...</div>';
 
     try {
-        const resp = await fetch('/api/workouts');
-        const data = await resp.json();
+        const data = await apiFetch('/api/workouts');
 
+        if (!data) return; // 401 handled by apiFetch
         if (!data.ok) {
-            if (resp.status === 401) {
-                workoutView.style.display = 'none';
-                loginView.style.display = 'block';
-                return;
-            }
             list.innerHTML = '<div class="empty">Error loading workouts</div>';
             return;
         }
@@ -89,9 +84,8 @@ async function openDetail(w) {
     // For completed workouts with a trainingId, fetch actual performance data
     if (w.isFinish === 1 && w.trainingId) {
         try {
-            const resp = await fetch(`/api/training/${w.trainingId}`);
-            const data = await resp.json();
-            if (data.ok && data.training) {
+            const data = await apiFetch(`/api/training/${w.trainingId}`);
+            if (data && data.ok && data.training) {
                 renderTrainingDetail(content, data.training, w);
                 return;
             }
@@ -111,10 +105,9 @@ async function openDetail(w) {
     }
 
     try {
-        const resp = await fetch(`/api/workout/${encodeURIComponent(w.code)}`);
-        const data = await resp.json();
+        const data = await apiFetch(`/api/workout/${encodeURIComponent(w.code)}`);
 
-        if (!data.ok || !data.detail) {
+        if (!data || !data.ok || !data.detail) {
             content.innerHTML = `
                 <div class="detail-title">${esc(w.name)}</div>
                 <div class="detail-date">${formatDate(w.date)}</div>
@@ -343,8 +336,8 @@ function openExerciseDetail(exerciseName) {
     const maxVol = Math.max(...sessions.map(s => s.volume));
     const barsHtml = sessions.map(s => {
         const pct = Math.max(4, (s.volume / maxVol) * 100);
-        return `<div class="bar" style="height:${pct}%">
-            <div class="bar-tooltip">${formatDate(s.date)}<br>${s.volume.toFixed(0)} kg</div>
+        return `<div class="chart-bar" style="height:${pct}%">
+            <div class="chart-tooltip">${formatDate(s.date)}<br>${s.volume.toFixed(0)} kg</div>
         </div>`;
     }).join('');
 
@@ -361,6 +354,6 @@ function openExerciseDetail(exerciseName) {
             </div>
         </div>
         <div class="section-heading">Volume per Session</div>
-        <div class="bar-chart-large">${barsHtml}</div>
+        <div class="chart chart-lg">${barsHtml}</div>
     `;
 }

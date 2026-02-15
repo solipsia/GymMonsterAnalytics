@@ -23,6 +23,24 @@ function esc(str) {
 
 function str(v) { return v == null ? '' : String(v); }
 
+async function apiFetch(url, options) {
+    const resp = await fetch(url, options);
+    if (resp.status === 401) {
+        workoutView.style.display = 'none';
+        loginView.style.display = 'block';
+        return null;
+    }
+    return resp.json();
+}
+
+async function apiPost(url, body) {
+    return apiFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
+
 // ── Constants ──
 
 const MUSCLE_GROUPS = ['Abs','Back','Biceps','Calves','Chest','Delts','Forearms','Glutes','Hamstrings','Quads','Traps','Triceps','Other'];
@@ -34,9 +52,8 @@ let _muscleGroupMap = {};
 
 async function loadMuscleGroups() {
     try {
-        const resp = await fetch('/api/muscle-groups');
-        const data = await resp.json();
-        if (data.ok) _muscleGroupMap = data.mapping || {};
+        const data = await apiFetch('/api/muscle-groups');
+        if (data && data.ok) _muscleGroupMap = data.mapping || {};
     } catch(e) {}
 }
 
@@ -46,22 +63,25 @@ function getMuscleGroup(name) {
 
 async function setMuscleGroup(name, group) {
     _muscleGroupMap[name] = group;
-    await fetch('/api/muscle-groups', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ exercise: name, group })
-    });
+    await apiPost('/api/muscle-groups', { exercise: name, group });
 }
 
 // ── Handle type mappings ──
 
 let _handleTypeMap = {};
+let _recoveryHours = 96; // default 4 days, loaded from settings
+
+async function loadSettings() {
+    const data = await apiFetch('/api/settings');
+    if (data && data.ok && data.settings) {
+        if (data.settings.recoveryHours) _recoveryHours = data.settings.recoveryHours;
+    }
+}
 
 async function loadHandleTypes() {
     try {
-        const resp = await fetch('/api/handle-types');
-        const data = await resp.json();
-        if (data.ok) _handleTypeMap = data.mapping || {};
+        const data = await apiFetch('/api/handle-types');
+        if (data && data.ok) _handleTypeMap = data.mapping || {};
     } catch(e) {}
 }
 
@@ -71,11 +91,7 @@ function getHandleType(name) {
 
 async function setHandleType(name, handleType) {
     _handleTypeMap[name] = handleType;
-    await fetch('/api/handle-types', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ exercise: name, handleType })
-    });
+    await apiPost('/api/handle-types', { exercise: name, handleType });
 }
 
 // ── Auth ──
@@ -98,21 +114,16 @@ async function doLogin() {
     btn.textContent = 'Logging in...';
 
     try {
-        const resp = await fetch('/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
-        });
-        const data = await resp.json();
+        const data = await apiPost('/login', { email, password });
 
-        if (data.ok) {
+        if (data && data.ok) {
             loginView.style.display = 'none';
             workoutView.style.display = 'block';
             loadWorkouts();
             loadPlannedWorkouts();
             await Promise.all([loadMuscleGroups(), loadHandleTypes()]);
             loadExerciseHistory();
-        } else {
+        } else if (data) {
             errorEl.textContent = data.error || 'Login failed';
             errorEl.style.display = 'block';
         }
@@ -126,7 +137,7 @@ async function doLogin() {
 }
 
 async function doLogout() {
-    await fetch('/logout', { method: 'POST' });
+    await apiPost('/logout', {});
     workoutView.style.display = 'none';
     loginView.style.display = 'block';
     document.getElementById('password').value = '';
@@ -156,9 +167,8 @@ async function loadPlannedWorkouts() {
     const section = document.getElementById('plannedWorkoutsSection');
     if (!section) return;
     try {
-        const resp = await fetch('/api/templates');
-        const data = await resp.json();
-        if (!data.ok || !data.templates || data.templates.length === 0) return;
+        const data = await apiFetch('/api/templates');
+        if (!data || !data.ok || !data.templates || data.templates.length === 0) return;
 
         let html = '<div class="planned-heading">Planned Workouts <a href="#" class="export-link" onclick="exportTemplatesJSON(event)">Export JSON</a></div><div class="planned-grid">';
         for (const t of data.templates) {
@@ -189,9 +199,8 @@ async function exportTemplatesJSON(e) {
     const origText = link.textContent;
     link.textContent = 'Exporting...';
     try {
-        const resp = await fetch('/api/templates/export');
-        const data = await resp.json();
-        if (!data.ok) {
+        const data = await apiFetch('/api/templates/export');
+        if (!data || !data.ok) {
             link.textContent = 'Error';
             setTimeout(() => link.textContent = origText, 2000);
             return;
@@ -210,24 +219,24 @@ function updateMuscleMapColors() {
     const paths = container.querySelectorAll('.muscles path[data-muscle]');
     if (!paths.length || !window._exerciseDaily) return;
 
-    // Find most recent exercise date per muscle group
+    // Find most recent finish time per muscle group (hour-level precision)
     const lastWorked = {};
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const lastTime = window._exerciseLastTime || {};
 
     for (const [exName, dates] of Object.entries(window._exerciseDaily)) {
         const group = getMuscleGroup(exName);
-        for (const dateStr of Object.keys(dates)) {
-            if (!lastWorked[group] || dateStr > lastWorked[group]) {
-                lastWorked[group] = dateStr;
-            }
+        const ft = lastTime[exName];
+        // Use finishTime if available, otherwise fall back to latest date
+        const best = ft || Object.keys(dates).sort().pop();
+        if (best && (!lastWorked[group] || best > lastWorked[group])) {
+            lastWorked[group] = best;
         }
     }
 
-    // Color each path based on days since last worked, add tooltip
+    // Color each path based on hours since last worked, add tooltip
     paths.forEach(path => {
         const group = path.dataset.muscle;
-        // Remove any existing tooltip
         const old = path.querySelector('title');
         if (old) old.remove();
 
@@ -237,20 +246,24 @@ function updateMuscleMapColors() {
             path.appendChild(t);
             return;
         }
-        const last = new Date(lastWorked[group]);
-        last.setHours(0, 0, 0, 0);
-        const days = Math.floor((today - last) / 86400000);
-        path.style.fill = muscleFatigueColor(days);
+        const last = new Date(lastWorked[group].replace(' ', 'T'));
+        const hours = Math.max(0, (now - last) / 3600000);
+        path.style.fill = muscleFatigueColor(hours);
 
         const t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-        t.textContent = days === 0 ? `${group}: today` : `${group}: ${days} day${days !== 1 ? 's' : ''} ago`;
+        if (hours < 1) t.textContent = `${group}: just now`;
+        else if (hours < 24) t.textContent = `${group}: ${Math.floor(hours)}h ago`;
+        else {
+            const days = Math.floor(hours / 24);
+            t.textContent = `${group}: ${days} day${days !== 1 ? 's' : ''} ago`;
+        }
         path.appendChild(t);
     });
 }
 
-function muscleFatigueColor(days) {
-    // 0 days = red (hue 0), 4+ days = green (hue 120)
-    const t = Math.min(days, 4) / 4; // 0..1
+function muscleFatigueColor(hours) {
+    // 0 hours = red (hue 0), _recoveryHours+ = green (hue 120)
+    const t = Math.min(hours, _recoveryHours) / _recoveryHours; // 0..1
     const hue = t * 120;
     return `hsl(${hue}, 75%, 50%)`;
 }
@@ -367,11 +380,10 @@ async function loadExerciseHistory() {
     loadMuscleMap();
 
     try {
-        const resp = await fetch('/api/exercise-history');
-        const data = await resp.json();
+        const data = await apiFetch('/api/exercise-history');
 
+        if (!data) return; // 401 handled by apiFetch
         if (!data.ok) {
-            if (resp.status === 401) return;
             content.innerHTML = '<div class="empty">Could not load exercise history</div>';
             return;
         }
@@ -383,6 +395,7 @@ async function loadExerciseHistory() {
 
         window._exerciseHistory = data.exercises;
         window._exerciseDaily = data.exercise_daily || {};
+        window._exerciseLastTime = data.exercise_last_time || {};
         renderExerciseHistoryTable();
         renderDailyVolumeChart(data.daily_volume || []);
         renderMuscleGroupCharts();

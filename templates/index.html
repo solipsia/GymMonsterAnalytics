@@ -66,7 +66,12 @@
                 <h1>Settings</h1>
                 <button onclick="closeSettings()" style="width:auto;padding:0.5rem 1rem;font-size:0.85rem;background:var(--bg-elevated);">Back</button>
             </div>
-            <div class="section-heading">Exercise Mappings</div>
+            <div class="section-heading">Muscle Full Recovery Time</div>
+            <div class="settings-slider-wrap">
+                <input type="range" id="recoverySlider" min="24" max="168" value="96" step="1" class="settings-slider">
+                <span id="recoveryLabel" class="settings-slider-label">4 days (96h)</span>
+            </div>
+            <div class="section-heading" style="margin-top:1.5rem;">Exercise Mappings</div>
             <div class="history-table-wrap">
                 <table class="history-table" id="settingsTable">
                     <thead><tr>
@@ -88,13 +93,12 @@
         // Init: check for saved session
         (async () => {
             try {
-                const resp = await fetch('/api/check');
-                const data = await resp.json();
-                if (data.ok) {
+                const data = await apiFetch('/api/check');
+                if (data && data.ok) {
                     workoutView.style.display = 'block';
                     loadWorkouts();
                     loadPlannedWorkouts();
-                    await Promise.all([loadMuscleGroups(), loadHandleTypes()]);
+                    await Promise.all([loadMuscleGroups(), loadHandleTypes(), loadSettings()]);
                     loadExerciseHistory();
                     return;
                 }

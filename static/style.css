@@ -296,6 +296,23 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
     cursor: pointer;
 }
 .settings-select:focus { outline: none; border-color: var(--primary); }
+.settings-slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+.settings-slider {
+    flex: 1;
+    max-width: 300px;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+.settings-slider-label {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    min-width: 120px;
+}
 
 /* Exercise bar chart */
 .exercise-history-bar {
@@ -308,21 +325,44 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
     color: var(--text-faint);
     margin-bottom: 0.3rem;
 }
-.bar-chart {
+
+/* Unified bar charts — base + size modifiers */
+.chart {
     display: flex;
     align-items: flex-end;
-    gap: 3px;
-    height: 60px;
-}
-.bar-chart .bar {
-    flex: 1;
-    background: var(--bar-fill);
-    border-radius: 2px 2px 0 0;
-    min-width: 8px;
     position: relative;
 }
-.bar-chart .bar:hover { background: var(--bar-hover); }
-.bar-chart .bar .bar-tooltip {
+.chart-xs { height: 60px; gap: 3px; }
+.chart-sm { height: 70px; gap: 1px; }
+.chart-md { height: 140px; gap: 1px; }
+.chart-lg { height: 180px; gap: 2px; padding: 0.5rem 0; }
+
+.chart-bar {
+    flex: 1;
+    min-width: 0;
+    border-radius: 2px 2px 0 0;
+    position: relative;
+    transition: background 0.15s;
+}
+.chart-xs .chart-bar { min-width: 8px; background: var(--bar-fill); }
+.chart-lg .chart-bar { min-width: 4px; background: var(--bar-fill); }
+.chart-xs .chart-bar:hover,
+.chart-lg .chart-bar:hover { background: var(--bar-hover); }
+.chart-bar.has-vol { background: var(--primary); }
+.chart-bar.has-vol:hover { background: var(--bar-hover); }
+.chart-bar.has-vol.current-week { background: var(--primary-hover); }
+.chart-bar.has-vol.current-week:hover { background: var(--bar-hover); }
+.chart-bar.bar-current { background: var(--bar-current) !important; }
+
+.chart-bar-empty {
+    flex: 1;
+    height: 2px;
+    background: var(--border);
+    min-width: 8px;
+    border-radius: 1px;
+}
+
+.chart-tooltip {
     display: none;
     position: absolute;
     bottom: 100%;
@@ -330,22 +370,25 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
     transform: translateX(-50%);
     background: var(--bg-elevated);
     color: var(--text);
-    padding: 0.2rem 0.4rem;
+    padding: 0.25rem 0.5rem;
     border-radius: 4px;
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     white-space: nowrap;
     pointer-events: none;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
+    z-index: 10;
 }
-.bar-chart .bar:hover .bar-tooltip { display: block; }
-.bar-chart .bar-empty {
-    flex: 1;
-    height: 2px;
-    background: var(--border);
-    min-width: 8px;
-    border-radius: 1px;
+.chart-xs .chart-tooltip { padding: 0.2rem 0.4rem; font-size: 0.65rem; margin-bottom: 2px; }
+.chart-bar:hover .chart-tooltip { display: block; }
+
+/* Daily volume chart wrapper */
+.daily-volume-wrap {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-surface);
+    border-radius: 8px;
+    border: 1px solid var(--border);
 }
-.bar-current { background: var(--bar-current) !important; }
 
 /* Clickable exercise history rows */
 .history-table tbody tr { cursor: pointer; transition: background 0.15s; }
@@ -376,125 +419,6 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
     color: var(--text-muted);
     margin-top: 0.25rem;
 }
-
-/* Large bar chart for exercise detail */
-.bar-chart-large {
-    display: flex;
-    align-items: flex-end;
-    gap: 2px;
-    height: 180px;
-    padding: 0.5rem 0;
-}
-.bar-chart-large .bar {
-    flex: 1;
-    background: var(--bar-fill);
-    border-radius: 2px 2px 0 0;
-    min-width: 4px;
-    position: relative;
-    transition: background 0.15s;
-}
-.bar-chart-large .bar:hover { background: var(--bar-hover); }
-.bar-chart-large .bar .bar-tooltip {
-    display: none;
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--bg-elevated);
-    color: var(--text);
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    white-space: nowrap;
-    pointer-events: none;
-    margin-bottom: 4px;
-    z-index: 10;
-}
-.bar-chart-large .bar:hover .bar-tooltip { display: block; }
-
-/* Daily volume chart */
-.daily-volume-wrap {
-    margin-top: 1.5rem;
-    padding: 1rem;
-    background: var(--bg-surface);
-    border-radius: 8px;
-    border: 1px solid var(--border);
-}
-.daily-volume-chart {
-    display: flex;
-    align-items: flex-end;
-    height: 140px;
-    gap: 1px;
-    position: relative;
-}
-.daily-volume-chart .dv-bar {
-    flex: 1;
-    min-width: 0;
-    border-radius: 1px 1px 0 0;
-    position: relative;
-}
-.daily-volume-chart .dv-bar.has-vol {
-    background: var(--primary);
-    transition: background 0.15s;
-}
-.daily-volume-chart .dv-bar.has-vol:hover { background: var(--bar-hover); }
-.daily-volume-chart .dv-bar .bar-tooltip {
-    display: none;
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--bg-elevated);
-    color: var(--text);
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    white-space: nowrap;
-    pointer-events: none;
-    margin-bottom: 4px;
-    z-index: 10;
-}
-.daily-volume-chart .dv-bar:hover .bar-tooltip { display: block; }
-.daily-volume-chart .dv-bar.has-vol.current-week { background: var(--primary-hover); }
-.daily-volume-chart .dv-bar.has-vol.current-week:hover { background: var(--bar-hover); }
-
-.daily-volume-chart-sm {
-    display: flex;
-    align-items: flex-end;
-    height: 70px;
-    gap: 1px;
-    position: relative;
-}
-.daily-volume-chart-sm .dv-bar {
-    flex: 1;
-    min-width: 0;
-    border-radius: 1px 1px 0 0;
-    position: relative;
-}
-.daily-volume-chart-sm .dv-bar.has-vol {
-    background: var(--primary);
-    transition: background 0.15s;
-}
-.daily-volume-chart-sm .dv-bar.has-vol:hover { background: var(--bar-hover); }
-.daily-volume-chart-sm .dv-bar .bar-tooltip {
-    display: none;
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--bg-elevated);
-    color: var(--text);
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    white-space: nowrap;
-    pointer-events: none;
-    margin-bottom: 4px;
-    z-index: 10;
-}
-.daily-volume-chart-sm .dv-bar:hover .bar-tooltip { display: block; }
-.daily-volume-chart-sm .dv-bar.has-vol.current-week { background: var(--primary-hover); }
-.daily-volume-chart-sm .dv-bar.has-vol.current-week:hover { background: var(--bar-hover); }
 
 /* Muscle map + planned workouts */
 #muscleMapContainer {
@@ -561,7 +485,7 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
     display: flex;
     flex-direction: column;
 }
-.detail-volume-chart .daily-volume-chart-sm {
+.detail-volume-chart .chart-sm {
     flex: 1;
     height: auto;
 }

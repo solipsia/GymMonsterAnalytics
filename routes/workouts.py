@@ -8,8 +8,8 @@ import requests as http_requests
 from flask import Blueprint, jsonify, session
 
 from helpers import (
-    BASE_URL, HOST, DEVICE_TYPE, MOBILE_DEVICES,
-    auth_headers, clear_config,
+    BASE_URL, DEVICE_TYPE,
+    auth_headers, check_session_expired, fetch_calendar_months,
     load_history_cache, save_history_cache,
     exercise_history_cache, cache_lock, CACHE_TTL, CACHE_VERSION,
 )
@@ -17,23 +17,9 @@ from helpers import (
 workouts_bp = Blueprint("workouts", __name__)
 
 
-def _thread_safe_headers(token, user_id):
-    """Build auth headers safe for use in thread pool workers (no Flask session)."""
-    return {
-        "Host": HOST,
-        "App_user_id": user_id,
-        "Token": token,
-        "Timestamp": str(int(time.time() * 1000)),
-        "Versioncode": "40304",
-        "Mobiledevices": MOBILE_DEVICES,
-        "Content-Type": "application/json",
-        "User-Agent": "Dart/3.9 (dart:io)",
-    }
-
-
 def _fetch_training_detail(training_id, token, user_id):
     """Fetch completed workout detail for a single training_id (thread-safe)."""
-    headers = _thread_safe_headers(token, user_id)
+    headers = auth_headers(token, user_id)
     try:
         resp = http_requests.get(
             f"{BASE_URL}/api/app/cttTrainingInfo/{training_id}",
@@ -48,55 +34,15 @@ def _fetch_training_detail(training_id, token, user_id):
     return None
 
 
-def _fetch_calendar_month(month_str, token, user_id):
-    """Fetch a single month of calendar data (thread-safe)."""
-    headers = _thread_safe_headers(token, user_id)
-    try:
-        resp = http_requests.get(
-            f"{BASE_URL}/api/app/v5/trainingCalendar/monthNew",
-            params={"date": month_str, "selectedDeviceType": DEVICE_TYPE},
-            headers=headers,
-            timeout=15,
-        )
-        if resp.status_code == 200:
-            body = resp.json()
-            if body.get("code") == 91:
-                return "expired"
-            return body.get("data", []) or []
-    except http_requests.RequestException:
-        pass
-    return []
-
-
 @workouts_bp.route("/api/workouts")
 def get_workouts():
     if not session.get("token"):
         return jsonify({"ok": False, "error": "Not logged in"}), 401
 
     headers = auth_headers()
-    all_days = []
-
-    today = datetime.now()
-    for months_back in range(3):
-        dt = today - timedelta(days=months_back * 30)
-        month_str = dt.strftime("%Y-%m")
-        try:
-            resp = http_requests.get(
-                f"{BASE_URL}/api/app/v5/trainingCalendar/monthNew",
-                params={"date": month_str, "selectedDeviceType": DEVICE_TYPE},
-                headers=headers,
-            )
-            if resp.status_code == 200:
-                body = resp.json()
-                if body.get("code") == 91:
-                    session.clear()
-                    clear_config()
-                    return jsonify({"ok": False, "error": "Session expired"}), 401
-                days = body.get("data", [])
-                if days:
-                    all_days.extend(days)
-        except http_requests.RequestException:
-            continue
+    all_days, err = fetch_calendar_months(3, headers)
+    if err:
+        return err
 
     workouts = []
     for day in all_days:
@@ -126,52 +72,10 @@ def get_workouts():
     return jsonify({"ok": True, "workouts": workouts})
 
 
-@workouts_bp.route("/api/exercise-history")
-def get_exercise_history():
-    """Aggregate exercise volume history across all completed workouts."""
-    if not session.get("token"):
-        return jsonify({"ok": False, "error": "Not logged in"}), 401
+# ── Exercise history helpers ──
 
-    token = session["token"]
-    user_id = session["user_id"]
-
-    with cache_lock:
-        if (
-            exercise_history_cache["data"] is not None
-            and exercise_history_cache["user_id"] == user_id
-            and time.time() - exercise_history_cache["timestamp"] < CACHE_TTL
-        ):
-            return jsonify({
-                "ok": True,
-                "exercises": exercise_history_cache["data"],
-                "daily_volume": exercise_history_cache.get("daily_volume", []),
-                "exercise_daily": exercise_history_cache.get("exercise_daily", {}),
-            })
-
-    headers = auth_headers()
-    all_days = []
-    today = datetime.now()
-    for months_back in range(13):
-        dt = today - timedelta(days=months_back * 30)
-        month_str = dt.strftime("%Y-%m")
-        try:
-            resp = http_requests.get(
-                f"{BASE_URL}/api/app/v5/trainingCalendar/monthNew",
-                params={"date": month_str, "selectedDeviceType": DEVICE_TYPE},
-                headers=headers,
-            )
-            if resp.status_code == 200:
-                body = resp.json()
-                if body.get("code") == 91:
-                    session.clear()
-                    clear_config()
-                    return jsonify({"ok": False, "error": "Session expired"}), 401
-                days = body.get("data", [])
-                if days:
-                    all_days.extend(days)
-        except http_requests.RequestException:
-            continue
-
+def _extract_completed(all_days):
+    """Extract completed workout references from calendar data."""
     completed = []
     for day in all_days:
         plans = day.get("trainingPlanList") or []
@@ -180,50 +84,55 @@ def get_exercise_history():
                 completed.append({
                     "date": day.get("date", ""),
                     "trainingId": plan["trainingId"],
+                    "finishTime": plan.get("finishTime", ""),
                 })
+    return completed
 
-    history_cache = load_history_cache()
-    if history_cache.get("user_id") != user_id or history_cache.get("version") != CACHE_VERSION:
-        history_cache = {"user_id": user_id, "trainings": {}, "version": CACHE_VERSION}
 
+def _fetch_uncached_details(completed, history_cache, token, user_id):
+    """Fetch training details not yet in cache. Returns updated cache."""
     cached_ids = set(history_cache.get("trainings", {}).keys())
     to_fetch = [w for w in completed if str(w["trainingId"]) not in cached_ids]
 
-    if to_fetch:
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_workout = {
-                executor.submit(_fetch_training_detail, w["trainingId"], token, user_id): w
-                for w in to_fetch
-            }
-            for future in as_completed(future_to_workout):
-                w = future_to_workout[future]
-                training = future.result()
-                if not training:
-                    continue
-                exercises = (
-                    training.get("cttActionLibraryTrainingInfoList")
-                    or training.get("actionLibraryTrainingInfoList")
-                    or []
-                )
-                extracted = []
-                for ex in exercises:
-                    name = (ex.get("actionLibraryName") or ex.get("name") or "Unknown").strip()
-                    sets = ex.get("finishedReps") or []
-                    vol = sum(float(s.get("capacity", 0) or 0) for s in sets)
-                    max_wt = 0
-                    for s in sets:
-                        cap = float(s.get("capacity", 0) or 0)
-                        reps = float(s.get("finishedCount", 0) or 0)
-                        if cap > 0 and reps > 0:
-                            max_wt = max(max_wt, cap / reps)
-                    extracted.append({"name": name, "volume": round(vol, 1), "max_weight": round(max_wt, 1)})
-                history_cache["trainings"][str(w["trainingId"])] = extracted
+    if not to_fetch:
+        return history_cache
 
-        save_history_cache(history_cache)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_workout = {
+            executor.submit(_fetch_training_detail, w["trainingId"], token, user_id): w
+            for w in to_fetch
+        }
+        for future in as_completed(future_to_workout):
+            w = future_to_workout[future]
+            training = future.result()
+            if not training:
+                continue
+            exercises = (
+                training.get("cttActionLibraryTrainingInfoList")
+                or training.get("actionLibraryTrainingInfoList")
+                or []
+            )
+            extracted = []
+            for ex in exercises:
+                name = (ex.get("actionLibraryName") or ex.get("name") or "Unknown").strip()
+                sets = ex.get("finishedReps") or []
+                vol = sum(float(s.get("capacity", 0) or 0) for s in sets)
+                max_wt = 0
+                for s in sets:
+                    cap = float(s.get("capacity", 0) or 0)
+                    reps = float(s.get("finishedCount", 0) or 0)
+                    if cap > 0 and reps > 0:
+                        max_wt = max(max_wt, cap / reps)
+                extracted.append({"name": name, "volume": round(vol, 1), "max_weight": round(max_wt, 1)})
+            history_cache["trainings"][str(w["trainingId"])] = extracted
 
-    cutoff_date = (today - timedelta(days=14)).strftime("%Y-%m-%d")
+    save_history_cache(history_cache)
+    return history_cache
+
+
+def _build_exercise_results(completed, history_cache, cutoff_date):
+    """Build filtered exercise history list from completed workouts and cache."""
     exercise_map = {}
-
     for w in completed:
         tid = str(w["trainingId"])
         exercises = history_cache.get("trainings", {}).get(tid, [])
@@ -254,12 +163,18 @@ def get_exercise_history():
             "all_history": data["sessions"],
             "max_weight": round(overall_max_weight, 1),
         })
+    return result
 
+
+def _build_daily_volumes(completed, history_cache):
+    """Build daily volume totals and per-exercise daily maps."""
     daily_vol_map = {}
     exercise_daily = {}
+    exercise_last_time = {}
     for w in completed:
         tid = str(w["trainingId"])
         date = w["date"]
+        finish_time = w.get("finishTime", "")
         exercises = history_cache.get("trainings", {}).get(tid, [])
         day_total = 0
         for ex in exercises:
@@ -271,19 +186,65 @@ def get_exercise_history():
             if name not in exercise_daily:
                 exercise_daily[name] = {}
             exercise_daily[name][date] = exercise_daily[name].get(date, 0) + round(vol, 1)
+            if finish_time and (name not in exercise_last_time or finish_time > exercise_last_time[name]):
+                exercise_last_time[name] = finish_time
         if day_total > 0:
             daily_vol_map[date] = daily_vol_map.get(date, 0) + day_total
 
     daily_volume = [{"date": d, "volume": round(v, 1)} for d, v in sorted(daily_vol_map.items())]
+    return daily_volume, exercise_daily, exercise_last_time
+
+
+@workouts_bp.route("/api/exercise-history")
+def get_exercise_history():
+    """Aggregate exercise volume history across all completed workouts."""
+    if not session.get("token"):
+        return jsonify({"ok": False, "error": "Not logged in"}), 401
+
+    token = session["token"]
+    user_id = session["user_id"]
+
+    with cache_lock:
+        if (
+            exercise_history_cache["data"] is not None
+            and exercise_history_cache["user_id"] == user_id
+            and time.time() - exercise_history_cache["timestamp"] < CACHE_TTL
+        ):
+            return jsonify({
+                "ok": True,
+                "exercises": exercise_history_cache["data"],
+                "daily_volume": exercise_history_cache.get("daily_volume", []),
+                "exercise_daily": exercise_history_cache.get("exercise_daily", {}),
+                "exercise_last_time": exercise_history_cache.get("exercise_last_time", {}),
+            })
+
+    headers = auth_headers()
+    all_days, err = fetch_calendar_months(13, headers)
+    if err:
+        return err
+
+    completed = _extract_completed(all_days)
+
+    history_cache = load_history_cache()
+    if history_cache.get("user_id") != user_id or history_cache.get("version") != CACHE_VERSION:
+        history_cache = {"user_id": user_id, "trainings": {}, "version": CACHE_VERSION}
+
+    history_cache = _fetch_uncached_details(completed, history_cache, token, user_id)
+
+    today = datetime.now()
+    cutoff_date = (today - timedelta(days=14)).strftime("%Y-%m-%d")
+    result = _build_exercise_results(completed, history_cache, cutoff_date)
+    daily_volume, exercise_daily, exercise_last_time = _build_daily_volumes(completed, history_cache)
 
     with cache_lock:
         exercise_history_cache["data"] = result
         exercise_history_cache["daily_volume"] = daily_volume
         exercise_history_cache["exercise_daily"] = exercise_daily
+        exercise_history_cache["exercise_last_time"] = exercise_last_time
         exercise_history_cache["timestamp"] = time.time()
         exercise_history_cache["user_id"] = user_id
 
-    return jsonify({"ok": True, "exercises": result, "daily_volume": daily_volume, "exercise_daily": exercise_daily})
+    return jsonify({"ok": True, "exercises": result, "daily_volume": daily_volume, "exercise_daily": exercise_daily, "exercise_last_time": exercise_last_time})
 
 
 @workouts_bp.route("/api/templates")
@@ -302,10 +263,9 @@ def get_templates():
             timeout=15,
         )
         body = resp.json()
-        if body.get("code") == 91:
-            session.clear()
-            clear_config()
-            return jsonify({"ok": False, "error": "Session expired"}), 401
+        expired = check_session_expired(body)
+        if expired:
+            return expired
         templates_raw = body.get("data") or []
     except http_requests.RequestException as e:
         return jsonify({"ok": False, "error": f"Failed to list templates: {e}"}), 500
@@ -368,10 +328,9 @@ def export_templates():
             timeout=15,
         )
         body = resp.json()
-        if body.get("code") == 91:
-            session.clear()
-            clear_config()
-            return jsonify({"ok": False, "error": "Session expired"}), 401
+        expired = check_session_expired(body)
+        if expired:
+            return expired
         templates_raw = body.get("data") or []
     except http_requests.RequestException as e:
         return jsonify({"ok": False, "error": f"Failed to list templates: {e}"}), 500
@@ -468,10 +427,9 @@ def get_workout_detail(template_code):
             headers=headers,
         )
         body = resp.json()
-        if body.get("code") == 91:
-            session.clear()
-            clear_config()
-            return jsonify({"ok": False, "error": "Session expired"}), 401
+        expired = check_session_expired(body)
+        if expired:
+            return expired
         data = body.get("data")
         if data:
             return jsonify({"ok": True, "detail": data})
@@ -503,10 +461,9 @@ def get_training_detail(training_id):
         try:
             resp = http_requests.get(url, headers=headers, timeout=10)
             body = resp.json()
-            if body.get("code") == 91:
-                session.clear()
-                clear_config()
-                return jsonify({"ok": False, "error": "Session expired"}), 401
+            expired = check_session_expired(body)
+            if expired:
+                return expired
             data = body.get("data")
             if data:
                 return jsonify({"ok": True, "training": data, "source": url})

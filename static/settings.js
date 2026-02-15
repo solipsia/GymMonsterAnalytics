@@ -1,8 +1,34 @@
 /* settings.js — Settings page with exercise mapping table */
 
+function formatRecoveryLabel(hours) {
+    const days = hours / 24;
+    if (hours % 24 === 0) return `${Math.round(days)} day${days !== 1 ? 's' : ''} (${hours}h)`;
+    return `${days.toFixed(1)} days (${hours}h)`;
+}
+
+function initRecoverySlider() {
+    const slider = document.getElementById('recoverySlider');
+    const label = document.getElementById('recoveryLabel');
+    slider.value = _recoveryHours;
+    label.textContent = formatRecoveryLabel(_recoveryHours);
+
+    slider.addEventListener('input', () => {
+        const h = parseInt(slider.value);
+        label.textContent = formatRecoveryLabel(h);
+    });
+    slider.addEventListener('change', async () => {
+        const h = parseInt(slider.value);
+        _recoveryHours = h;
+        await apiPost('/api/settings', { recoveryHours: h });
+        updateMuscleMapColors();
+    });
+}
+
 function openSettings() {
     workoutView.style.display = 'none';
     settingsView.style.display = 'block';
+
+    initRecoverySlider();
 
     // Collect ALL exercise names from exerciseDaily + existing mappings
     const names = new Set();

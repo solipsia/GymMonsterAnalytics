@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify
 from helpers import (
     load_muscle_groups, save_muscle_groups,
     load_handle_types, save_handle_types,
+    load_settings, save_settings,
 )
 
 settings_bp = Blueprint("settings", __name__)
@@ -47,4 +48,20 @@ def save_handle_type():
     mapping = load_handle_types()
     mapping[exercise] = handle_type
     save_handle_types(mapping)
+    return jsonify({"ok": True})
+
+
+@settings_bp.route("/api/settings")
+def get_settings():
+    """Return app settings."""
+    return jsonify({"ok": True, "settings": load_settings()})
+
+
+@settings_bp.route("/api/settings", methods=["POST"])
+def update_settings():
+    """Update app settings (merges with existing)."""
+    data = request.get_json()
+    settings = load_settings()
+    settings.update(data)
+    save_settings(settings)
     return jsonify({"ok": True})

@@ -156,15 +156,34 @@ function renderMuscleGroupCharts() {
 
         const avgSvg = buildRollingAvgSvg(weeks, maxVol);
 
+        // Build mini muscle map SVG with this group highlighted
+        let miniSvg = '';
+        if (window._muscleSvgText) {
+            miniSvg = `<div class="muscle-chart-svg" data-highlight="${esc(group)}">${window._muscleSvgText}</div>`;
+        }
+
         html += `
-            <div class="daily-volume-wrap">
-                <div class="section-heading" style="font-size:1rem;">${esc(group)}</div>
+            <div class="daily-volume-wrap muscle-chart-tile">
+                ${miniSvg}
+                <div class="section-heading muscle-chart-title" style="font-size:1rem;">${esc(group)}</div>
                 <div class="chart chart-sm">${barsHtml}${avgSvg}</div>
             </div>
         `;
     }
 
     container.innerHTML = html;
+
+    // Color each mini muscle map: highlight the target group in red, others dark grey
+    container.querySelectorAll('.muscle-chart-svg').forEach(wrap => {
+        const target = wrap.dataset.highlight;
+        wrap.querySelectorAll('.muscles path[data-muscle]').forEach(path => {
+            path.style.fill = path.dataset.muscle === target ? 'hsl(0, 75%, 50%)' : '#475569';
+        });
+        wrap.querySelectorAll('.body-outline path').forEach(path => {
+            path.style.fill = '#334155';
+            path.style.stroke = '#666';
+        });
+    });
 }
 
 function renderWorkoutVolumeChart(templateCode) {

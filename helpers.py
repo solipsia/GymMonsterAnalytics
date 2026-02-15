@@ -45,9 +45,12 @@ def load_config():
     return {}
 
 
-def save_config(token, user_id):
+def save_config(token, user_id, email=None):
+    data = {"token": token, "user_id": user_id}
+    if email:
+        data["email"] = email
     with open(CONFIG_FILE, "w") as f:
-        json.dump({"token": token, "user_id": user_id}, f)
+        json.dump(data, f)
 
 
 def clear_config():

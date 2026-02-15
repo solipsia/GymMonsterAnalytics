@@ -136,6 +136,7 @@ async function doLogin() {
         const data = await apiPost('/login', { email, password });
 
         if (data && data.ok) {
+            document.getElementById('userEmail').textContent = data.email || email;
             loginView.style.display = 'none';
             workoutView.style.display = 'block';
             loadWorkouts();
@@ -175,6 +176,7 @@ async function loadMuscleMap() {
     try {
         const resp = await fetch('/static/muscles.svg');
         const svgText = await resp.text();
+        window._muscleSvgText = svgText;
         svgWrap.innerHTML = svgText;
         container.style.display = 'flex';
     } catch (e) {
@@ -191,9 +193,13 @@ async function loadPlannedWorkouts() {
 
         let html = '<div class="planned-heading">Planned Workouts <a href="#" class="export-link" onclick="exportTemplatesJSON(event)">Export JSON</a></div><div class="planned-grid">';
         for (const t of data.templates) {
-            const exList = t.exercises.length > 0
-                ? t.exercises.map(e => esc(e)).join(', ')
-                : `${t.actionNum} exercise${t.actionNum !== 1 ? 's' : ''}`;
+            let exList;
+            if (t.exercises.length > 0) {
+                const muscles = [...new Set(t.exercises.map(e => getMuscleGroup(e)).filter(g => g && g !== 'Other'))];
+                exList = muscles.length > 0 ? muscles.map(m => esc(m)).join(', ') : `${t.exercises.length} exercise${t.exercises.length !== 1 ? 's' : ''}`;
+            } else {
+                exList = `${t.actionNum} exercise${t.actionNum !== 1 ? 's' : ''}`;
+            }
             html += `<div class="planned-card" data-template-code="${esc(t.code)}" onclick="openTemplateDetail(this)">`;
             html += `<div class="planned-card-name">${esc(t.name)}</div>`;
             html += `<div class="planned-card-exercises">${exList}</div>`;
@@ -393,18 +399,19 @@ function renderExerciseHistoryTable() {
     });
 
     const maxCols = 20;
-    let headerHtml = '<th>Exercise</th><th>Muscle</th>';
-    for (let i = 0; i < maxCols; i++) {
-        headerHtml += `<th class="history-vol">${i + 1}</th>`;
-    }
+    let headerHtml = '<th>Exercise</th><th>Muscle</th><th>Secondary</th>';
+    headerHtml += `<th class="history-vol history-span-header" colspan="${maxCols}">Weight History</th>`;
 
     let bodyHtml = '';
     for (const ex of exercises) {
         const muscle = getMuscleGroup(ex.name);
+        const secondary = getSecondaryMuscle(ex.name);
+        const secDisplay = secondary && secondary !== 'None' ? secondary : '';
         const isDual = getHandleType(ex.name) === 'Dual Handle';
         bodyHtml += `<tr data-exercise="${esc(ex.name)}">`;
         bodyHtml += `<td>${esc(ex.name)}</td>`;
         bodyHtml += `<td class="muscle-col" data-muscle-cell="${esc(ex.name)}">${esc(muscle)}</td>`;
+        bodyHtml += `<td class="muscle-col">${esc(secDisplay)}</td>`;
 
         const offset = maxCols - ex.history.length;
         let prevWt = null;
@@ -484,6 +491,7 @@ async function loadExerciseHistory() {
 
 function showWorkoutList() {
     detailView.style.display = 'none';
+    historyView.style.display = 'none';
     workoutView.style.display = 'block';
     renderExerciseHistoryTable();
     renderMuscleGroupCharts();

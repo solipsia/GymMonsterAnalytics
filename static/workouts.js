@@ -1,82 +1,119 @@
 /* workouts.js — Workout list, detail views, exercise rendering */
 
+function _buildWorkoutGroups(workouts) {
+    const groups = [];
+    const groupMap = {};
+    for (let i = 0; i < workouts.length; i++) {
+        const w = workouts[i];
+        const dateKey = w.date || 'unknown';
+        if (!groupMap[dateKey]) {
+            groupMap[dateKey] = { date: dateKey, workouts: [] };
+            groups.push(groupMap[dateKey]);
+        }
+        groupMap[dateKey].workouts.push({ ...w, _idx: i });
+    }
+    return groups;
+}
+
+function _renderWorkoutItem(w) {
+    const statusLabel = w.isFinish === 1 ? 'Completed' : 'Scheduled';
+    const mins = w.durationMinute ? `${w.durationMinute} min` : '';
+    const cals = w.calorie ? `${w.calorie} kcal` : '';
+    const meta = [mins, cals].filter(Boolean).join(' \u00b7 ');
+    return `
+        <div class="workout-item" data-idx="${w._idx}">
+            <div>
+                <div class="workout-name">${esc(w.name)}</div>
+                <span class="workout-status">${statusLabel}</span>
+                ${meta ? `<span style="color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem">${meta}</span>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function _renderDayGroup(g) {
+    const totalVol = g.workouts.reduce((sum, w) => sum + (w.totalCapacity || 0), 0);
+    const volLabel = totalVol > 0 ? `${totalVol.toFixed(1)} kg` : '';
+    const items = g.workouts.map(w => _renderWorkoutItem(w)).join('');
+    return `
+        <div class="day-group">
+            <div class="day-group-header">
+                <span class="day-group-date">${formatDate(g.date)}</span>
+                ${volLabel ? `<span class="day-group-volume">${volLabel}</span>` : ''}
+            </div>
+            ${items}
+        </div>
+    `;
+}
+
+function _wireWorkoutClicks(container) {
+    container.querySelectorAll('.workout-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const w = window._workouts[el.dataset.idx];
+            openDetail(w);
+        });
+    });
+}
+
 async function loadWorkouts() {
-    const list = document.getElementById('workoutList');
-    list.innerHTML = '<div class="spinner">Loading workouts...</div>';
+    const recentSection = document.getElementById('recentWorkoutsSection');
+    const recentContent = document.getElementById('recentWorkoutsContent');
+    recentContent.innerHTML = '<div class="spinner">Loading workouts...</div>';
+    recentSection.style.display = 'block';
 
     try {
         const data = await apiFetch('/api/workouts');
 
-        if (!data) return; // 401 handled by apiFetch
+        if (!data) return;
         if (!data.ok) {
-            list.innerHTML = '<div class="empty">Error loading workouts</div>';
+            recentContent.innerHTML = '<div class="empty">Error loading workouts</div>';
             return;
         }
 
         if (!data.workouts || data.workouts.length === 0) {
-            list.innerHTML = '<div class="empty">No workouts found in the last 3 months</div>';
+            recentContent.innerHTML = '<div class="empty">No workouts found in the last 3 months</div>';
             return;
         }
 
         window._workouts = data.workouts;
+        window._workoutGroups = _buildWorkoutGroups(data.workouts);
 
-        // Group workouts by date
-        const groups = [];
-        const groupMap = {};
-        for (let i = 0; i < data.workouts.length; i++) {
-            const w = data.workouts[i];
-            const dateKey = w.date || 'unknown';
-            if (!groupMap[dateKey]) {
-                groupMap[dateKey] = { date: dateKey, workouts: [] };
-                groups.push(groupMap[dateKey]);
-            }
-            groupMap[dateKey].workouts.push({ ...w, _idx: i });
-        }
+        // Render only the most recent day on the home page
+        const recentGroup = window._workoutGroups[0];
+        const totalVol = recentGroup.workouts.reduce((sum, w) => sum + (w.totalCapacity || 0), 0);
+        const volLabel = totalVol > 0 ? `${totalVol.toFixed(1)} kg` : '';
+        const items = recentGroup.workouts.map(w => _renderWorkoutItem(w)).join('');
 
-        list.innerHTML = groups.map(g => {
-            const totalVol = g.workouts.reduce((sum, w) => sum + (w.totalCapacity || 0), 0);
-            const volLabel = totalVol > 0 ? `${totalVol.toFixed(1)} kg` : '';
-
-            const items = g.workouts.map(w => {
-                const statusLabel = w.isFinish === 1 ? 'Completed' : 'Scheduled';
-                const mins = w.durationMinute ? `${w.durationMinute} min` : '';
-                const cals = w.calorie ? `${w.calorie} kcal` : '';
-                const meta = [mins, cals].filter(Boolean).join(' \u00b7 ');
-                return `
-                    <div class="workout-item" data-idx="${w._idx}">
-                        <div>
-                            <div class="workout-name">${esc(w.name)}</div>
-                            <span class="workout-status">${statusLabel}</span>
-                            ${meta ? `<span style="color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem">${meta}</span>` : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            return `
-                <div class="day-group">
-                    <div class="day-group-header">
-                        <span class="day-group-date">${formatDate(g.date)}</span>
-                        ${volLabel ? `<span class="day-group-volume">${volLabel}</span>` : ''}
-                    </div>
-                    ${items}
+        recentContent.innerHTML = `
+            <div class="day-group">
+                <div class="day-group-header">
+                    <span class="day-group-date">${formatDate(recentGroup.date)}</span>
+                    ${volLabel ? `<span class="day-group-volume">${volLabel}</span>` : ''}
                 </div>
-            `;
-        }).join('');
-
-        list.querySelectorAll('.workout-item').forEach(el => {
-            el.addEventListener('click', () => {
-                const w = window._workouts[el.dataset.idx];
-                openDetail(w);
-            });
-        });
+                <div class="recent-workouts-grid">${items}</div>
+            </div>
+            <button class="history-link-btn" onclick="showFullHistory()">Exercise History</button>
+        `;
+        _wireWorkoutClicks(recentContent);
     } catch (e) {
-        list.innerHTML = '<div class="empty">Connection error</div>';
+        recentContent.innerHTML = '<div class="empty">Connection error</div>';
     }
+}
+
+function showFullHistory() {
+    workoutView.style.display = 'none';
+    historyView.style.display = 'block';
+
+    const list = document.getElementById('workoutList');
+    if (!window._workoutGroups) return;
+
+    list.innerHTML = window._workoutGroups.map(g => _renderDayGroup(g)).join('');
+    _wireWorkoutClicks(list);
 }
 
 async function openDetail(w) {
     workoutView.style.display = 'none';
+    historyView.style.display = 'none';
     detailView.style.display = 'block';
     const content = document.getElementById('detailContent');
     content.innerHTML = '<div class="spinner">Loading workout details...</div>';

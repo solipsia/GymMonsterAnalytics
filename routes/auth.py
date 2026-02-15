@@ -21,12 +21,13 @@ def index():
 def check_auth():
     """Check if we have a saved session (from config file or session)."""
     if session.get("token"):
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "email": session.get("email", "")})
     cfg = load_config()
     if cfg.get("token") and cfg.get("user_id"):
         session["token"] = cfg["token"]
         session["user_id"] = cfg["user_id"]
-        return jsonify({"ok": True})
+        session["email"] = cfg.get("email", "")
+        return jsonify({"ok": True, "email": cfg.get("email", "")})
     return jsonify({"ok": False})
 
 
@@ -74,9 +75,10 @@ def login():
 
     session["token"] = token
     session["user_id"] = str(user_id)
-    save_config(token, str(user_id))
+    session["email"] = email
+    save_config(token, str(user_id), email)
 
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "email": email})
 
 
 @auth_bp.route("/logout", methods=["POST"])

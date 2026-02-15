@@ -28,9 +28,12 @@
         <div id="workoutView">
             <div class="header-bar">
                 <h1>Gym Monster Analytics</h1>
-                <div style="display:flex;gap:0.5rem;">
-                    <button id="settingsBtn" onclick="openSettings()" title="Settings" style="width:auto;padding:0.5rem 0.75rem;font-size:1rem;background:var(--bg-elevated);">&#9881;</button>
-                    <button id="logoutBtn" onclick="doLogout()">Log Out</button>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.25rem;">
+                    <div style="display:flex;gap:0.5rem;">
+                        <button id="settingsBtn" onclick="openSettings()" title="Settings" style="width:auto;padding:0.5rem 0.75rem;font-size:1rem;background:var(--bg-elevated);">&#9881;</button>
+                        <button id="logoutBtn" onclick="doLogout()">Log Out</button>
+                    </div>
+                    <div id="userEmail" style="font-size:0.75rem;color:var(--text-muted);"></div>
                 </div>
             </div>
             <div id="muscleMapContainer" style="display:none;">
@@ -40,6 +43,10 @@
                 </div>
                 <div id="plannedWorkoutsSection"></div>
             </div>
+            <div id="recentWorkoutsSection" style="display:none;">
+                <div class="section-heading">Last Workout</div>
+                <div id="recentWorkoutsContent"></div>
+            </div>
             <div id="exerciseHistorySection" style="display:none;">
                 <div class="section-heading">Weight History</div>
                 <div id="exerciseHistoryContent">
@@ -48,10 +55,13 @@
                 <div id="dailyVolumeChart"></div>
                 <div id="muscleGroupCharts"></div>
             </div>
-            <div class="section-heading">Recent Workouts</div>
-            <div id="workoutList">
-                <div class="spinner">Loading workouts...</div>
-            </div>
+        </div>
+
+        <!-- Full Workout History View -->
+        <div id="historyView">
+            <button class="back-btn" onclick="showWorkoutList()">Back</button>
+            <div class="section-heading">Exercise History</div>
+            <div id="workoutList"></div>
         </div>
 
         <!-- Detail View -->
@@ -97,6 +107,7 @@
             try {
                 const data = await apiFetch('/api/check');
                 if (data && data.ok) {
+                    if (data.email) document.getElementById('userEmail').textContent = data.email;
                     workoutView.style.display = 'block';
                     loadWorkouts();
                     loadPlannedWorkouts();

@@ -77,6 +77,7 @@ python app.py            # Starts on http://localhost:5000
   - **Precision**: uses `_exerciseLastTime` timestamps for hour-level precision on the most recent date, date-level precision for older events
   - `updateMuscleMapColors()` calls `computeMuscleFatigue()` and colors via `muscleFatigueColor(fatigue)`: fatigue 1.0 = red (hue 0), 0.0 = green (hue 120). Unexercised muscles stay dark gray. Tooltips show "X% fatigued" or "recovered"/"no data".
 - **Muscle map (detail view)**: `renderDetailMuscleMap(exerciseNames)` shows a smaller SVG in the planned workout detail header. Primary muscles colored red, secondary-only muscles colored orange, unworked muscles grey. Tooltips show "(primary)" or "(secondary)".
+- **Editable template weights**: In the template detail view, weight cells are inline `<input type="number" class="weight-input">` fields. The editable value is the bold one: per-handle for dual-handle exercises, total weight for single-weight. RM (counterweight) exercises are read-only. Input values equal the raw API `weights` field value — no conversion needed on save. `onWeightInput()` updates the computed column live and enables the Save button. `saveTemplateWeights()` collects inputs, rebuilds each exercise's `weights` CSV in the stored `window._editingTemplate` object, and POSTs the complete template to `/api/workout/save` (which proxies to Speediance `POST /api/app/v2/customTrainingTemplate`). Uses read-modify-write pattern: only `weights` fields are changed, all other template data is preserved from the original API response.
 - **Planned workouts**: Displayed to the right of the muscle map in `#plannedWorkoutsSection`. `loadPlannedWorkouts()` fetches `/api/templates` and renders cards in a 2-column grid showing template name + exercise names. Cards are clickable (reuses `openDetail()` flow). Container scrolls vertically if content exceeds muscle map height (267px). `#muscleMapContainer` uses flexbox with `#muscleMapSvg` (fixed) and `#plannedWorkoutsSection` (flex: 1) as siblings.
 
 ## Backend Routes
@@ -92,6 +93,7 @@ python app.py            # Starts on http://localhost:5000
 | `/api/training/<id>` | GET | workouts | Get completed workout data (actual performance) |
 | `/api/exercise-history` | GET | workouts | Aggregated exercise volume history (persistent + in-memory cache) |
 | `/api/templates` | GET | workouts | List all custom training templates with exercise names |
+| `/api/workout/save` | POST | workouts | Save modified workout template weights to Speediance API |
 | `/api/muscle-groups` | GET | settings | Return saved muscle group mappings |
 | `/api/muscle-groups` | POST | settings | Save exercise muscle mapping (group, secondary, secondaryPercent) |
 | `/api/handle-types` | GET | settings | Return saved handle type mappings |
@@ -110,6 +112,7 @@ python app.py            # Starts on http://localhost:5000
 - **Custom template detail**: `GET /api/app/v3/customTrainingTemplate/detailByCode?code={code}`
   - Returns `actionLibraryList` array — each exercise has `title`, `img`, `setsAndReps` (comma-separated), `weights` (comma-separated, per-handle kg for dual-handle exercises — multiply by 2 for total), `sportMode`, `breakTime2`
 - **Template CRUD**: `POST /api/app/v2/customTrainingTemplate` (create/update), `DELETE /api/app/customTrainingTemplate?ids={id}` (delete)
+- **Weight unit conversion**: The GET API returns weights in **kg**, but the POST API expects weights in an **internal unit** (≈ lbs, factor **2.2**). When saving template weights, multiply kg values by 2.2 before POSTing. Do NOT convert counterweight/RM values. The constant `KG_TO_API = 2.2` is defined in `routes/workouts.py`.
 - **Exercise library**: `GET /api/app/actionLibraryTab/list?deviceType=1` (categories), `GET /api/app/actionLibraryGroup/trainingPartGroup?tabId={id}&deviceTypeList=1` (exercises by category)
 - Volume values from the API are in raw units (display directly as kg, do NOT divide by 1000)
 - Weight per set is calculated as `volume / reps` (not from avgWeight)
@@ -126,7 +129,7 @@ Dark slate theme using CSS custom properties in `static/style.css` (`--bg-base: 
 |------|----------|
 | `static/app.js` | `formatDate()`, `esc()`, `str()`, `apiFetch()`, `apiPost()`, `MUSCLE_GROUPS`, `HANDLE_TYPES`, muscle mapping functions (`getMuscleGroup`, `getSecondaryMuscle`, `getSecondaryPercent`, `setMuscleGroup`), handle mapping functions, `doLogin()`, `doLogout()`, `loadSettings()`, `loadMuscleMap()`, `computeMuscleFatigue()`, `updateMuscleMapColors()`, `muscleFatigueColor()`, `renderDetailMuscleMap()`, `loadPlannedWorkouts()`, `openTemplateDetail()`, `renderExerciseHistoryTable()`, `loadExerciseHistory()`, `showWorkoutList()` |
 | `static/charts.js` | `buildWeekBuckets()`, `aggregateWeekly()`, `formatWeekRange()`, `buildRollingAvgSvg(items, maxVol, windowSize)`, `renderDailyVolumeChart()`, `renderMuscleGroupCharts()`, `renderExerciseBarChart()` |
-| `static/workouts.js` | `loadWorkouts()`, `openDetail()`, `renderTrainingDetail()`, `renderTrainingExercise()`, `renderExercise()`, `buildMuscleVolumeSummary()`, `openExerciseDetail()` |
+| `static/workouts.js` | `loadWorkouts()`, `openDetail()`, `renderTrainingDetail()`, `renderTrainingExercise()`, `renderExercise(ex, exIdx)`, `onWeightInput()`, `saveTemplateWeights()`, `buildMuscleVolumeSummary()`, `openExerciseDetail()` |
 | `static/settings.js` | `formatRecoveryLabel()`, `initRecoverySlider()`, `openSettings()`, `closeSettings()` |
 | `templates/index.html` | HTML structure + init script (session check, Enter key listeners) |
 

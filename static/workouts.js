@@ -117,6 +117,7 @@ async function openDetail(w) {
         }
 
         const detail = data.detail;
+        window._editingTemplate = JSON.parse(JSON.stringify(detail));
         const exercises = detail.actionLibraryList || [];
         const exerciseNames = exercises.map(ex => ex.title || ex.name || ex.groupName || '').filter(Boolean);
 
@@ -137,8 +138,18 @@ async function openDetail(w) {
             html += '<div class="empty">No exercises found in this workout.</div>';
         } else {
             html += '<div class="section-heading" style="margin-top:0.5rem;">Exercises</div>';
-            html += exercises.map(ex => renderExercise(ex)).join('');
+            html += exercises.map((ex, idx) => renderExercise(ex, idx)).join('');
         }
+
+        html += `
+            <div id="saveSection" style="margin-top:1rem; display:flex; align-items:center; gap:1rem;">
+                <button id="saveTemplateBtn" onclick="saveTemplateWeights()" disabled
+                        style="width:auto; padding:0.6rem 1.5rem; font-size:0.9rem;">
+                    Save Weights
+                </button>
+                <span id="saveStatus" style="font-size:0.85rem;"></span>
+            </div>
+        `;
 
         content.innerHTML = html;
         renderDetailMuscleMap(exerciseNames);
@@ -261,7 +272,7 @@ function renderTrainingExercise(ex, workoutDate) {
     };
 }
 
-function renderExercise(ex) {
+function renderExercise(ex, exIdx) {
     const name = ex.title || ex.name || ex.groupName || 'Exercise';
     const reps = str(ex.setsAndReps).split(',').filter(Boolean);
     const weights = str(ex.weights).split(',').filter(Boolean);
@@ -272,6 +283,7 @@ function renderExercise(ex) {
     const leftRight = str(ex.leftRight).split(',').filter(Boolean);
     const numSets = reps.length;
     const isDual = getHandleType(name) === 'Dual Handle';
+    const editable = exIdx !== undefined;
 
     const modeNames = { '1': 'Standard', '2': 'Eccentric', '3': 'Eccentric', '4': 'Chain' };
 
@@ -285,8 +297,22 @@ function renderExercise(ex) {
         // API weights field stores per-handle weight, so total = value * 2 for dual handle
         let weightLabel = '-';
         let perHandleLabel = '';
-        if (counters[i] && counters[i] !== '0') {
+        const isRM = counters[i] && counters[i] !== '0';
+
+        if (isRM) {
             weightLabel = `RM ${counters[i]}`;
+        } else if (editable) {
+            // Editable mode: show input for the bold (primary) weight field
+            const rawVal = parseFloat(weights[i]) || 0;
+            const inputVal = rawVal > 0 ? rawVal.toFixed(1) : '';
+            const inputHtml = `<input type="number" class="weight-input" value="${inputVal}" min="0" step="0.5" data-ex="${exIdx}" data-set="${i}" oninput="onWeightInput(this,${exIdx},${i},${isDual})" placeholder="0">`;
+            if (isDual) {
+                const totalDisplay = rawVal > 0 ? `${(rawVal * 2).toFixed(1)} kg` : '-';
+                weightLabel = `<span id="calc-total-${exIdx}-${i}" style="color:var(--text-muted)">${totalDisplay}</span>`;
+                perHandleLabel = `${inputHtml} kg`;
+            } else {
+                weightLabel = `${inputHtml} kg`;
+            }
         } else if (weights[i] && weights[i] !== '0') {
             const perHandle = parseFloat(weights[i]);
             if (isDual) {
@@ -304,8 +330,8 @@ function renderExercise(ex) {
         rows += `<tr>
             <td>${i + 1}${side}</td>
             <td>${repLabel}</td>
-            <td style="${isDual ? 'color:var(--text-muted)' : 'font-weight:600'}">${weightLabel}</td>
-            <td style="font-weight:600">${isDual ? perHandleLabel : '-'}</td>
+            <td style="${isDual && !isRM ? 'color:var(--text-muted)' : (!isRM && !editable ? 'font-weight:600' : '')}">${weightLabel}</td>
+            <td style="${!isRM && !editable && isDual ? 'font-weight:600' : ''}">${isDual ? (perHandleLabel || '-') : '-'}</td>
             <td>${mode}</td>
             <td>${rest}</td>
         </tr>`;
@@ -331,6 +357,94 @@ function renderExercise(ex) {
             </table>
         </div>
     `;
+}
+
+function onWeightInput(input, exIdx, setIdx, isDual) {
+    const val = parseFloat(input.value) || 0;
+    if (isDual) {
+        const totalSpan = document.getElementById(`calc-total-${exIdx}-${setIdx}`);
+        if (totalSpan) {
+            totalSpan.textContent = val > 0 ? `${(val * 2).toFixed(1)} kg` : '-';
+        }
+    }
+    const saveBtn = document.getElementById('saveTemplateBtn');
+    if (saveBtn) saveBtn.disabled = false;
+}
+
+async function saveTemplateWeights() {
+    const btn = document.getElementById('saveTemplateBtn');
+    const status = document.getElementById('saveStatus');
+    const template = window._editingTemplate;
+
+    if (!template || !template.id) {
+        status.textContent = 'Error: no template loaded (missing id)';
+        status.style.color = 'var(--error-text, #f87171)';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    status.textContent = '';
+
+    // Collect all weight inputs and validate
+    const inputs = document.querySelectorAll('.weight-input');
+    const exercises = template.actionLibraryList || [];
+    const changes = {};
+
+    for (const input of inputs) {
+        const exIdx = parseInt(input.dataset.ex);
+        const setIdx = parseInt(input.dataset.set);
+        const val = input.value === '' ? 0 : parseFloat(input.value);
+
+        if (isNaN(val) || val < 0) {
+            status.textContent = `Invalid weight in exercise ${exIdx + 1}, set ${setIdx + 1}`;
+            status.style.color = 'var(--error-text, #f87171)';
+            btn.disabled = false;
+            btn.textContent = 'Save Weights';
+            return;
+        }
+
+        if (!changes[exIdx]) changes[exIdx] = {};
+        changes[exIdx][setIdx] = val;
+    }
+
+    // Apply changes to template weights CSVs
+    for (const [exIdxStr, sets] of Object.entries(changes)) {
+        const exIdx = parseInt(exIdxStr);
+        const ex = exercises[exIdx];
+        if (!ex) continue;
+        const currentWeights = str(ex.weights).split(',');
+        for (const [setIdxStr, val] of Object.entries(sets)) {
+            const setIdx = parseInt(setIdxStr);
+            while (currentWeights.length <= setIdx) currentWeights.push('0');
+            currentWeights[setIdx] = val.toString();
+        }
+        ex.weights = currentWeights.join(',');
+    }
+
+    // POST to backend
+    const data = await apiPost('/api/workout/save', template);
+    if (!data) return; // 401 handled by apiPost
+
+    if (data.ok) {
+        status.textContent = 'Saved successfully';
+        status.style.color = 'var(--success)';
+        btn.textContent = 'Save Weights';
+
+        // Update muscle volume summary in-place
+        const summaryEl = document.querySelector('.muscle-volume-summary');
+        if (summaryEl) {
+            const newSummary = buildMuscleVolumeSummary(exercises);
+            if (newSummary) {
+                summaryEl.outerHTML = newSummary;
+            }
+        }
+    } else {
+        status.textContent = data.error || 'Save failed';
+        status.style.color = 'var(--error-text, #f87171)';
+        btn.disabled = false;
+        btn.textContent = 'Save Weights';
+    }
 }
 
 function buildMuscleVolumeSummary(exercises) {

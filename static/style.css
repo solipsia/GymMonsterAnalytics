@@ -308,6 +308,27 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
 }
 .settings-pct:focus { outline: none; border-color: var(--primary); }
 .settings-pct:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Inline weight editing inputs in template detail */
+.weight-input {
+    background: var(--bg-base);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.2rem 0.3rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    width: 4.5rem;
+    text-align: right;
+    -moz-appearance: textfield;
+}
+.weight-input::-webkit-outer-spin-button,
+.weight-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.weight-input:focus { outline: none; border-color: var(--primary); }
+
 .settings-slider-wrap {
     display: flex;
     align-items: center;

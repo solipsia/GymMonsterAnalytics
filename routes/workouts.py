@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests as http_requests
-from flask import Blueprint, jsonify, session
+from flask import Blueprint, jsonify, request, session
 
 from helpers import (
     BASE_URL, DEVICE_TYPE,
@@ -441,6 +441,68 @@ def get_workout_detail(template_code):
         "error": "Could not load workout details",
         "debug": f"Endpoint returned: {body}" if 'body' in dir() else "Request failed",
     }), 404
+
+
+KG_TO_API = 2.2  # Speediance API stores weights in internal units (~lbs); GET returns kg, POST expects internal
+
+
+@workouts_bp.route("/api/workout/save", methods=["POST"])
+def save_workout_template():
+    """Save modified workout template back to Speediance API.
+
+    The Speediance GET API returns weights in kg, but the POST API expects
+    weights in an internal unit (approx. lbs, factor ~2.2). We convert
+    all non-counterweight weights from kg to the internal unit before saving.
+    """
+    if not session.get("token"):
+        return jsonify({"ok": False, "error": "Not logged in"}), 401
+
+    data = request.get_json()
+    if not data or not data.get("id"):
+        return jsonify({"ok": False, "error": "Missing template data or id"}), 400
+
+    # Convert weights from kg (as returned by GET) to API internal units
+    for ex in data.get("actionLibraryList") or []:
+        weights_csv = str(ex.get("weights") or "")
+        counters_csv = str(ex.get("counterweight2") or ex.get("counterweight") or "")
+        weights = weights_csv.split(",")
+        counters = counters_csv.split(",")
+        converted = []
+        for i, w in enumerate(weights):
+            w = w.strip()
+            if not w:
+                converted.append(w)
+                continue
+            # Skip conversion for preset/RM exercises (counterweight is the real value)
+            counter = counters[i].strip() if i < len(counters) else ""
+            if counter and counter != "0":
+                converted.append(w)
+                continue
+            try:
+                kg_val = float(w)
+                api_val = kg_val * KG_TO_API
+                converted.append(f"{api_val:.1f}")
+            except ValueError:
+                converted.append(w)
+        ex["weights"] = ",".join(converted)
+
+    headers = auth_headers()
+    try:
+        resp = http_requests.post(
+            f"{BASE_URL}/api/app/v2/customTrainingTemplate",
+            headers=headers,
+            json=data,
+            timeout=15,
+        )
+        body = resp.json()
+        expired = check_session_expired(body)
+        if expired:
+            return expired
+        if body.get("code") == 0:
+            return jsonify({"ok": True})
+        return jsonify({"ok": False, "error": body.get("msg", "Save failed")}), 500
+    except http_requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"Save failed: {e}"}), 500
 
 
 @workouts_bp.route("/api/training/<int:training_id>")

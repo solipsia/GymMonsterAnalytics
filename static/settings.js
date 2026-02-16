@@ -28,6 +28,14 @@ function openSettings() {
     workoutView.style.display = 'none';
     settingsView.style.display = 'block';
 
+    // Init AI review prompt textarea
+    const promptArea = document.getElementById('aiReviewPrompt');
+    promptArea.value = _aiReviewPrompt;
+    promptArea.addEventListener('change', async () => {
+        _aiReviewPrompt = promptArea.value;
+        await apiPost('/api/settings', { aiReviewPrompt: promptArea.value });
+    });
+
     initRecoverySlider();
 
     // Collect ALL exercise names from exerciseDaily + existing mappings

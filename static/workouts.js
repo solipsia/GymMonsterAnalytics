@@ -20,15 +20,58 @@ function _renderWorkoutItem(w) {
     const mins = w.durationMinute ? `${w.durationMinute} min` : '';
     const cals = w.calorie ? `${w.calorie} kcal` : '';
     const meta = [mins, cals].filter(Boolean).join(' \u00b7 ');
+    const volumeBars = _renderVolumeBars(w);
     return `
-        <div class="workout-item" data-idx="${w._idx}">
-            <div>
+        <div class="workout-item" data-idx="${w._idx}" data-code="${esc(w.code || '')}">
+            <div style="flex:1;min-width:0;">
                 <div class="workout-name">${esc(w.name)}</div>
-                <span class="workout-status">${statusLabel}</span>
-                ${meta ? `<span style="color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem">${meta}</span>` : ''}
+                <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                    <span class="workout-status">${statusLabel}</span>
+                    ${meta ? `<span style="color:var(--text-muted); font-size:0.75rem">${meta}</span>` : ''}
+                </div>
+                ${volumeBars}
             </div>
         </div>
     `;
+}
+
+function _renderVolumeBars(w) {
+    const planned = window._templatePlannedVolume && window._templatePlannedVolume[w.code];
+    if (!planned || planned <= 0) return '';
+    const actual = w.totalCapacity || 0;
+    const maxVal = Math.max(planned, actual);
+    if (maxVal <= 0) return '';
+    const plannedPct = (planned / maxVal) * 100;
+    const actualPct = (actual / maxVal) * 100;
+    const ratio = actual > 0 ? Math.round((actual / planned) * 100) : 0;
+    const ratioColor = ratio >= 100 ? 'var(--success)' : ratio >= 80 ? 'var(--accent)' : 'var(--text-muted)';
+    return `
+        <div class="volume-bars" title="Actual: ${actual.toFixed(0)} kg / Planned: ${planned.toFixed(0)} kg">
+            <div class="volume-bar-track">
+                <div class="volume-bar-planned" style="width:${plannedPct}%"></div>
+                <div class="volume-bar-actual" style="width:${actualPct}%"></div>
+            </div>
+            <span class="volume-bar-label" style="color:${ratioColor}">${actual > 0 ? ratio + '%' : 'planned'}</span>
+        </div>
+    `;
+}
+
+function _updateVolumeBars() {
+    // Re-render volume bars on existing workout items after planned data loads
+    if (!window._workouts) return;
+    document.querySelectorAll('.workout-item[data-code]').forEach(el => {
+        const code = el.dataset.code;
+        const idx = parseInt(el.dataset.idx);
+        if (!code || isNaN(idx)) return;
+        const w = window._workouts[idx];
+        if (!w) return;
+        const existing = el.querySelector('.volume-bars');
+        const newBars = _renderVolumeBars(w);
+        if (newBars && !existing) {
+            const container = el.querySelector('div');
+            if (container) container.insertAdjacentHTML('beforeend', newBars);
+        }
+    });
 }
 
 function _renderDayGroup(g) {

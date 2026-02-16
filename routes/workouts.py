@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request, session
 from helpers import (
     BASE_URL, DEVICE_TYPE,
     auth_headers, check_session_expired, fetch_calendar_months,
-    load_history_cache, save_history_cache,
+    load_history_cache, save_history_cache, load_handle_types,
     exercise_history_cache, cache_lock, CACHE_TTL, CACHE_VERSION,
 )
 
@@ -270,7 +270,10 @@ def get_templates():
     except http_requests.RequestException as e:
         return jsonify({"ok": False, "error": f"Failed to list templates: {e}"}), 500
 
-    # Fetch detail for each template in parallel to get exercise names
+    # Load handle types for accurate volume calculation
+    handle_types = load_handle_types()
+
+    # Fetch detail for each template in parallel to get exercise names + planned volume
     def _fetch_template_detail(code):
         try:
             r = http_requests.get(
@@ -282,7 +285,32 @@ def get_templates():
             d = r.json().get("data")
             if d:
                 exercises = d.get("actionLibraryList") or []
-                return [ex.get("title", "Unknown") for ex in exercises]
+                names = [ex.get("title", "Unknown") for ex in exercises]
+                # Compute planned volume: sum(reps × total_weight) per set
+                planned_vol = 0
+                for ex in exercises:
+                    reps_csv = str(ex.get("setsAndReps") or "")
+                    weights_csv = str(ex.get("weights") or "")
+                    counters_csv = str(ex.get("counterweight2") or ex.get("counterweight") or "")
+                    reps_list = reps_csv.split(",")
+                    weights_list = weights_csv.split(",")
+                    counters_list = counters_csv.split(",")
+                    for i in range(len(reps_list)):
+                        if not reps_list[i]:
+                            continue
+                        counter = counters_list[i].strip() if i < len(counters_list) else ""
+                        if counter and counter != "0":
+                            continue  # Skip RM/counterweight exercises
+                        try:
+                            rep_val = float(reps_list[i])
+                            wt = float(weights_list[i]) if i < len(weights_list) and weights_list[i] else 0
+                            ex_name = ex.get("title", "")
+                            is_dual = handle_types.get(ex_name, "Dual Handle") == "Dual Handle"
+                            total_wt = wt * 2 if is_dual else wt
+                            planned_vol += rep_val * total_wt
+                        except (ValueError, IndexError):
+                            pass
+                return {"names": names, "plannedVolume": round(planned_vol, 1)}
         except Exception:
             pass
         return None
@@ -302,11 +330,13 @@ def get_templates():
     templates = []
     for t in templates_raw:
         code = t.get("code", "")
+        detail = code_map.get(code, {})
         templates.append({
             "name": t.get("name", "Untitled"),
             "code": code,
             "actionNum": t.get("actionNum", 0),
-            "exercises": code_map.get(code, []),
+            "exercises": detail.get("names", []) if isinstance(detail, dict) else detail,
+            "plannedVolume": detail.get("plannedVolume", 0) if isinstance(detail, dict) else 0,
         })
 
     return jsonify({"ok": True, "templates": templates})

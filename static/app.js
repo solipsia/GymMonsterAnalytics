@@ -89,11 +89,14 @@ async function setMuscleGroup(name, group, secondary, secondaryPercent) {
 
 let _handleTypeMap = {};
 let _recoveryHours = 96; // default 4 days, loaded from settings
+const DEFAULT_AI_PROMPT = 'You are a fitness trainer and advisor. Below is the data for my weekly workout schedule for the Speediance Gym Monster fitness machine. My goal is time efficient hypertrophy. Review this workout in detail and give your assessment about whether it\'s fit for purpose for my objective and what tweaks could be made';
+let _aiReviewPrompt = DEFAULT_AI_PROMPT;
 
 async function loadSettings() {
     const data = await apiFetch('/api/settings');
     if (data && data.ok && data.settings) {
         if (data.settings.recoveryHours) _recoveryHours = data.settings.recoveryHours;
+        if (data.settings.aiReviewPrompt !== undefined) _aiReviewPrompt = data.settings.aiReviewPrompt;
     }
 }
 
@@ -191,7 +194,17 @@ async function loadPlannedWorkouts() {
         const data = await apiFetch('/api/templates');
         if (!data || !data.ok || !data.templates || data.templates.length === 0) return;
 
-        let html = '<div class="planned-heading">Planned Workouts <a href="#" class="export-link" onclick="exportTemplatesJSON(event)">Export JSON</a></div><div class="planned-grid">';
+        // Store planned volumes per template code for volume comparison bars
+        window._templatePlannedVolume = {};
+        for (const t of data.templates) {
+            if (t.code && t.plannedVolume > 0) {
+                window._templatePlannedVolume[t.code] = t.plannedVolume;
+            }
+        }
+        // Re-render workout items now that planned volumes are available
+        _updateVolumeBars();
+
+        let html = '<div class="planned-heading">Planned Workouts <a href="#" class="export-link" onclick="exportTemplatesJSON(event)">Export JSON</a> <a href="#" class="export-link" onclick="exportAIReview(event)">AI Review</a></div><div class="planned-grid">';
         for (const t of data.templates) {
             let exList;
             if (t.exercises.length > 0) {
@@ -233,6 +246,28 @@ async function exportTemplatesJSON(e) {
         const json = JSON.stringify(data.templates, null, 2);
         await navigator.clipboard.writeText(json);
         link.textContent = 'Copied!';
+    } catch (err) {
+        link.textContent = 'Failed';
+    }
+    setTimeout(() => link.textContent = origText, 2000);
+}
+
+async function exportAIReview(e) {
+    e.preventDefault();
+    const link = e.target;
+    const origText = link.textContent;
+    link.textContent = 'Exporting...';
+    try {
+        const data = await apiFetch('/api/templates/export');
+        if (!data || !data.ok) {
+            link.textContent = 'Error';
+            setTimeout(() => link.textContent = origText, 2000);
+            return;
+        }
+        const json = JSON.stringify(data.templates, null, 2);
+        const output = _aiReviewPrompt + '\n\n' + json;
+        await navigator.clipboard.writeText(output);
+        link.textContent = 'LLM prompt copied to clipboard';
     } catch (err) {
         link.textContent = 'Failed';
     }
@@ -479,6 +514,7 @@ async function loadExerciseHistory() {
         window._exerciseDaily = data.exercise_daily || {};
         window._exerciseLastTime = data.exercise_last_time || {};
         renderExerciseHistoryTable();
+        renderActivityHeatmap(data.daily_volume || []);
         renderDailyVolumeChart(data.daily_volume || []);
         renderMuscleGroupCharts();
         updateMuscleMapColors();

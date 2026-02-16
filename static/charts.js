@@ -234,6 +234,121 @@ function renderWorkoutVolumeChart(templateCode) {
     });
 }
 
+function renderActivityHeatmap(dailyVolume) {
+    const container = document.getElementById('activityHeatmap');
+    if (!container) return;
+    if (!dailyVolume || dailyVolume.length === 0) { container.innerHTML = ''; return; }
+
+    // Build volume map
+    const volMap = {};
+    for (const d of dailyVolume) volMap[d.date] = d.volume;
+
+    // Calculate grid: 53 weeks, starting from Monday ~52 weeks ago
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dow = today.getDay(); // 0=Sun, 1=Mon, ...
+    const daysSinceMonday = (dow + 6) % 7; // Mon=0, Tue=1, ..., Sun=6
+    // Start: go back 52 full weeks + remaining days to hit a Monday
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - 364 - daysSinceMonday);
+
+    // Build all dates in range
+    const allDates = [];
+    const d = new Date(startDate);
+    while (d <= today) {
+        allDates.push(d.toISOString().slice(0, 10));
+        d.setDate(d.getDate() + 1);
+    }
+
+    // Count workout days and compute volume quantiles
+    const volumes = allDates.map(dt => volMap[dt] || 0).filter(v => v > 0);
+    const workoutCount = volumes.length;
+    volumes.sort((a, b) => a - b);
+    const q1 = volumes[Math.floor(volumes.length * 0.25)] || 0;
+    const q2 = volumes[Math.floor(volumes.length * 0.50)] || 0;
+    const q3 = volumes[Math.floor(volumes.length * 0.75)] || 0;
+
+    const COLORS = ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'];
+    function volumeColor(vol) {
+        if (vol <= 0) return COLORS[0];
+        if (vol <= q1) return COLORS[1];
+        if (vol <= q2) return COLORS[2];
+        if (vol <= q3) return COLORS[3];
+        return COLORS[4];
+    }
+
+    // Build week columns (each column is Mon..Sun)
+    const weeks = [];
+    let weekStart = new Date(startDate);
+    while (weekStart <= today) {
+        const week = [];
+        for (let dayOff = 0; dayOff < 7; dayOff++) {
+            const dt = new Date(weekStart);
+            dt.setDate(dt.getDate() + dayOff);
+            if (dt > today) {
+                week.push(null);
+            } else {
+                week.push(dt.toISOString().slice(0, 10));
+            }
+        }
+        weeks.push(week);
+        weekStart.setDate(weekStart.getDate() + 7);
+    }
+
+    // Month labels: find first week where a month starts
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthLabels = new Array(weeks.length).fill('');
+    let lastMonth = -1;
+    for (let wi = 0; wi < weeks.length; wi++) {
+        // Check first day of week (Monday)
+        const dt = weeks[wi][0];
+        if (!dt) continue;
+        const m = parseInt(dt.slice(5, 7)) - 1;
+        if (m !== lastMonth) {
+            monthLabels[wi] = monthNames[m];
+            lastMonth = m;
+        }
+    }
+
+    // Day labels: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
+    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    // Build HTML using CSS grid
+    const numCols = weeks.length + 1; // +1 for day labels column
+    let gridHtml = `<div class="heatmap-grid" style="grid-template-columns: 28px repeat(${weeks.length}, 11px);">`;
+
+    // Month label row
+    gridHtml += '<div></div>'; // empty corner
+    for (let wi = 0; wi < weeks.length; wi++) {
+        gridHtml += `<div class="heatmap-month-label">${monthLabels[wi]}</div>`;
+    }
+
+    // Day rows (0=Sun, 1=Mon, ..., 6=Sat)
+    for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+        gridHtml += `<div class="heatmap-day-label">${dayLabels[dayIdx]}</div>`;
+        for (let wi = 0; wi < weeks.length; wi++) {
+            const dt = weeks[wi][dayIdx];
+            if (!dt) {
+                gridHtml += '<div></div>';
+                continue;
+            }
+            const vol = volMap[dt] || 0;
+            const color = volumeColor(vol);
+            const tipDate = new Date(dt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            const tipText = vol > 0 ? `${tipDate}: ${vol.toFixed(0)} kg` : `${tipDate}: No workouts`;
+            gridHtml += `<div class="heatmap-cell" style="background:${color}"><div class="heatmap-tip">${tipText}</div></div>`;
+        }
+    }
+    gridHtml += '</div>';
+
+    container.innerHTML = `
+        <div class="heatmap-wrap">
+            <div class="heatmap-header">${workoutCount} workouts in the last year</div>
+            <div class="heatmap-container">${gridHtml}</div>
+        </div>
+    `;
+}
+
 function renderExerciseBarChart(exerciseName, currentDate) {
     if (!window._exerciseHistory) return '';
     const ex = window._exerciseHistory.find(e => e.name === exerciseName);

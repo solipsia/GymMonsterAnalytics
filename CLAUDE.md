@@ -81,6 +81,8 @@ python app.py            # Starts on http://localhost:5000
 - **Planned workouts**: Displayed to the right of the muscle map in `#plannedWorkoutsSection`. `loadPlannedWorkouts()` fetches `/api/templates` and renders cards in a 2-column grid showing template name + **primary muscle groups** (not exercise names). Cards are clickable (reuses `openDetail()` flow). Container scrolls vertically if content exceeds muscle map height (267px). `#muscleMapContainer` uses flexbox with `#muscleMapSvg` (fixed) and `#plannedWorkoutsSection` (flex: 1) as siblings.
 - **Last Workout section**: Shows only the most recent day's workouts in a 2-column grid (`#recentWorkoutsSection`) above Weight History. Includes an "Exercise History" button (styled to match day-group-date: cyan accent, small padding) that navigates to `#historyView` — a separate full-page view with the complete workout list grouped by date. `showFullHistory()` renders the full list; `showWorkoutList()` returns to the home page.
 - **Exercise History view** (`#historyView`): Full workout history list (all day-groups), accessed via "Exercise History" button on home page. Has a Back button to return to the main view. Clicking a workout opens the detail view as normal.
+- **Planned vs Actual volume bars**: On each workout card (Last Workout + Exercise History), horizontal bars compare planned template volume (grey) vs actual completed volume (indigo). Shows percentage label: green (>=100%), cyan (>=80%), muted (<80%). Only shown for custom templates with planned volume data. `_renderVolumeBars(w)` generates the HTML; `_updateVolumeBars()` retroactively inserts bars after template data loads (since workouts and templates load in parallel). Backend `/api/templates` computes `plannedVolume` per template from `actionLibraryList` weights/reps using handle type mappings.
+- **Activity heatmap**: GitHub-style year calendar (`#activityHeatmap`) between Last Workout and Weight History sections. `renderActivityHeatmap(dailyVolume)` builds a CSS grid of 53 weeks × 7 days (Mon–Sun, Monday at top). Green intensity based on volume quartiles (4 levels). Shows "N workouts in the last year" header. Tooltips on hover show date + volume. Uses `daily_volume` data from exercise history API.
 
 ## Backend Routes
 
@@ -94,7 +96,7 @@ python app.py            # Starts on http://localhost:5000
 | `/api/workout/<code>` | GET | workouts | Get workout template detail (planned exercises) |
 | `/api/training/<id>` | GET | workouts | Get completed workout data (actual performance) |
 | `/api/exercise-history` | GET | workouts | Aggregated exercise volume history (persistent + in-memory cache) |
-| `/api/templates` | GET | workouts | List all custom training templates with exercise names |
+| `/api/templates` | GET | workouts | List all custom training templates with exercise names and planned volumes |
 | `/api/workout/save` | POST | workouts | Save modified workout template weights to Speediance API |
 | `/api/muscle-groups` | GET | settings | Return saved muscle group mappings |
 | `/api/muscle-groups` | POST | settings | Save exercise muscle mapping (group, secondary, secondaryPercent) |
@@ -130,8 +132,8 @@ Dark slate theme using CSS custom properties in `static/style.css` (`--bg-base: 
 | File | Contents |
 |------|----------|
 | `static/app.js` | `formatDate()`, `esc()`, `str()`, `apiFetch()`, `apiPost()`, `MUSCLE_GROUPS`, `HANDLE_TYPES`, muscle mapping functions (`getMuscleGroup`, `getSecondaryMuscle`, `getSecondaryPercent`, `setMuscleGroup`), handle mapping functions, `doLogin()`, `doLogout()`, `loadSettings()`, `loadMuscleMap()`, `computeMuscleFatigue()`, `updateMuscleMapColors()`, `muscleFatigueColor()`, `renderDetailMuscleMap()`, `loadPlannedWorkouts()`, `openTemplateDetail()`, `renderExerciseHistoryTable()`, `loadExerciseHistory()`, `showWorkoutList()` |
-| `static/charts.js` | `buildWeekBuckets()`, `aggregateWeekly()`, `formatWeekRange()`, `buildRollingAvgSvg(items, maxVol, windowSize)`, `renderDailyVolumeChart()`, `renderMuscleGroupCharts()`, `renderExerciseBarChart()` |
-| `static/workouts.js` | `_buildWorkoutGroups()`, `_renderWorkoutItem()`, `_renderDayGroup()`, `_wireWorkoutClicks()`, `loadWorkouts()`, `showFullHistory()`, `openDetail()`, `renderTrainingDetail()`, `renderTrainingExercise()`, `renderExercise(ex, exIdx)`, `onWeightInput()`, `saveTemplateWeights()`, `buildMuscleVolumeSummary()`, `openExerciseDetail()` |
+| `static/charts.js` | `buildWeekBuckets()`, `aggregateWeekly()`, `formatWeekRange()`, `buildRollingAvgSvg(items, maxVol, windowSize)`, `renderDailyVolumeChart()`, `renderMuscleGroupCharts()`, `renderActivityHeatmap()`, `renderExerciseBarChart()` |
+| `static/workouts.js` | `_buildWorkoutGroups()`, `_renderWorkoutItem()`, `_renderVolumeBars()`, `_updateVolumeBars()`, `_renderDayGroup()`, `_wireWorkoutClicks()`, `loadWorkouts()`, `showFullHistory()`, `openDetail()`, `renderTrainingDetail()`, `renderTrainingExercise()`, `renderExercise(ex, exIdx)`, `onWeightInput()`, `saveTemplateWeights()`, `buildMuscleVolumeSummary()`, `openExerciseDetail()` |
 | `static/settings.js` | `formatRecoveryLabel()`, `initRecoverySlider()`, `openSettings()`, `closeSettings()` |
 | `templates/index.html` | HTML structure + init script (session check, Enter key listeners) |
 
@@ -145,6 +147,7 @@ Load order: `app.js` → `charts.js` → `workouts.js` → `settings.js` → inl
   - Exercise history table on home screen (`loadExerciseHistory()`) — rows are clickable
   - Bar charts in detail view (`renderExerciseBarChart()`)
   - Exercise detail view (`openExerciseDetail()`) — shows sessions count, max weight, full volume bar chart
+- `window._templatePlannedVolume` — planned volume per template code `{code: volume_kg}` from `/api/templates`, used by `_renderVolumeBars()` for planned vs actual comparison bars on workout cards
 - `window._workoutGroups` — workouts grouped by date, built by `_buildWorkoutGroups()`, used by recent workouts section and full history view
 - Workout list groups items by date (`.day-group`) with daily volume totals
 - `window._exerciseLastTime` — per-exercise most recent finish timestamp `{exercise_name: "YYYY-MM-DD HH:MM:SS"}` from `/api/exercise-history`, used by `computeMuscleFatigue()` for hour-level precision on the most recent exercise date

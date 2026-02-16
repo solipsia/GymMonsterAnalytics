@@ -47,6 +47,7 @@
                 <div class="section-heading">Last Workout</div>
                 <div id="recentWorkoutsContent"></div>
             </div>
+            <div id="activityHeatmap"></div>
             <div id="exerciseHistorySection" style="display:none;">
                 <div class="section-heading">Weight History</div>
                 <div id="exerciseHistoryContent">
@@ -76,7 +77,10 @@
                 <h1>Settings</h1>
                 <button onclick="closeSettings()" style="width:auto;padding:0.5rem 1rem;font-size:0.85rem;background:var(--bg-elevated);">Back</button>
             </div>
-            <div class="section-heading">Muscle Full Recovery Time</div>
+            <div class="section-heading">Prompt for AI Workout Plan Review</div>
+            <textarea id="aiReviewPrompt" rows="4" class="ai-prompt-textarea" placeholder="Enter your AI review prompt..."></textarea>
+
+            <div class="section-heading" style="margin-top:1.5rem;">Muscle Full Recovery Time</div>
             <div class="settings-slider-wrap">
                 <input type="range" id="recoverySlider" min="24" max="168" value="96" step="1" class="settings-slider">
                 <span id="recoveryLabel" class="settings-slider-label">4 days (96h)</span>

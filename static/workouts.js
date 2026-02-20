@@ -135,7 +135,7 @@ async function loadWorkouts() {
                 </div>
                 <div class="recent-workouts-grid">${items}</div>
             </div>
-            <button class="history-link-btn" onclick="showFullHistory()">Exercise History</button>
+            <button class="history-link-btn" onclick="showFullHistory()">View Exercise History</button>
         `;
         _wireWorkoutClicks(recentContent);
     } catch (e) {

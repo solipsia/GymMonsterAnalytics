@@ -364,11 +364,25 @@ function renderExerciseBarChart(exerciseName, currentDate) {
         padded[offset + i] = ex.history[i];
     }
 
-    const barsHtml = padded.map(h => {
+    const barsHtml = padded.map((h, i) => {
         if (!h) return '<div class="chart-bar-empty"></div>';
         const pct = Math.max(5, (h.volume / maxVol) * 100);
         const isCurrent = h.date === currentDate;
+
+        // Calculate % change from previous non-null bar
+        let changeHtml = '';
+        let prevIdx = i - 1;
+        while (prevIdx >= 0 && !padded[prevIdx]) prevIdx--;
+        if (prevIdx >= 0 && padded[prevIdx] && padded[prevIdx].volume > 0) {
+            const prev = padded[prevIdx].volume;
+            const delta = ((h.volume - prev) / prev) * 100;
+            const sign = delta > 0 ? '+' : '';
+            const color = delta > 0 ? 'var(--success)' : delta < 0 ? '#f87171' : 'var(--text-muted)';
+            changeHtml = `<div class="bar-change" style="color:${color}">${sign}${Math.round(delta)}%</div>`;
+        }
+
         return `<div class="chart-bar ${isCurrent ? 'bar-current' : ''}" style="height:${pct}%">
+            ${changeHtml}
             <div class="chart-tooltip">${h.date}: ${h.volume.toFixed(0)} kg</div>
         </div>`;
     }).join('');

@@ -441,6 +441,19 @@ button:disabled { background: var(--text-faint); cursor: not-allowed; }
 .chart-bar.has-vol.current-week:hover { background: var(--bar-hover); }
 .chart-bar.bar-current { background: var(--bar-current) !important; }
 
+/* % change label overlaid on exercise bar chart bars */
+.bar-change {
+    position: absolute;
+    top: -1px;
+    left: 50%;
+    transform: translate(-50%, -100%);
+    font-size: 0.55rem;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    line-height: 1;
+}
+
 .chart-bar-empty {
     flex: 1;
     height: 2px;
